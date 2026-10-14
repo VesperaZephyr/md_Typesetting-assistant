@@ -1,0 +1,24 @@
+{
+  "name": "md2publish",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Markdown / LaTeX → 知乎 & 微信公众号 排版助手",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "highlight.js": "^11.10.0",
+    "markdown-it": "^14.1.0",
+    "mathjax-full": "^3.2.2"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-singlefile": "^2.0.2"
+  }
+}
