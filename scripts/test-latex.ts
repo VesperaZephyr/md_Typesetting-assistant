@@ -18,10 +18,15 @@ const tex = String.raw`\documentclass{article}
 \end{equation}
 \subsection{收敛性}
 若 $f$ 光滑，则反演公式成立：
-\begin{align}
+\begin{align*}
 f(x) &= \int_{\R} \hat{f}(\xi) e^{2\pi i x \xi}\,d\xi \\
      &= \lim_{R\to\infty} \int_{-R}^{R}.
-\end{align}
+\end{align*}
+并且满足：
+\begin{gather*}
+A + B = C \\
+D + E = F
+\end{gather*}
 \begin{theorem}[Plancherel]
 $\|\hat{f}\|_2 = \|f\|_2$ 对所有 $f \in L^1 \cap L^2$ 成立。
 \end{theorem}

@@ -24,7 +24,7 @@ export interface MathSeg {
 const MATH_ENVS = ['equation', 'align', 'gather', 'multline', 'eqnarray', 'alignat', 'flalign', 'displaymath'];
 
 const MATH_ENV_RE = new RegExp(
-  '^\\\\begin\\{(' + MATH_ENVS.join('|') + ')\\*?\\}'
+  '^\\\\begin\\{((?:' + MATH_ENVS.join('|') + ')\\*?)\\}'
 );
 
 function envEndTag(env: string): string {

@@ -4,7 +4,7 @@ import {
   BUILTIN_THEMES, DEFAULT_THEME_NAME, validateTheme,
   buildThemeFromVisualConfig, extractVisualConfig,
   type Theme, type ThemeVisualConfig, type FontFamilyType, type H2StyleType,
-  type BlockquoteStyleType, type CodeThemeType,
+  type BlockquoteStyleType, type TableStyleType, type StrongStyleType, type CodeThemeType,
 } from './core/themes';
 import { richCopy, textCopy } from './core/clipboard';
 import { SAMPLE_DOC } from './sample';
@@ -142,7 +142,7 @@ app.innerHTML = `
       <label class="phone-toggle"><input type="checkbox" id="phoneWidth"> 手机宽度</label>
     </div>
     <div class="pane-body">
-      <iframe id="preview" class="preview-frame" sandbox=""></iframe>
+      <iframe id="preview" class="preview-frame"></iframe>
       <pre id="htmlView" class="html-view hidden"></pre>
     </div>
     <div class="statusbar">
@@ -172,7 +172,7 @@ app.innerHTML = `
         <div class="visual-controls">
           <!-- 预设基准 -->
           <div class="vgroup">
-            <div class="vgroup-title">基准预设（快速换装）</div>
+            <div class="vgroup-title">基准预设（快速换装，16 款经典设计）</div>
             <div class="field-row">
               <select id="vBasePreset" class="full-select"></select>
             </div>
@@ -183,13 +183,19 @@ app.innerHTML = `
             <div class="vgroup-title">主色调（自动作用于标题边条、强调字、链接、引用框）</div>
             <div class="color-palette" id="colorPalette">
               <button type="button" class="color-dot" data-color="#4a90d9" style="background:#4a90d9;" title="科技蓝"></button>
-              <button type="button" class="color-dot" data-color="#c0392b" style="background:#c0392b;" title="中国红"></button>
-              <button type="button" class="color-dot" data-color="#2d6a4f" style="background:#2d6a4f;" title="青竹绿"></button>
-              <button type="button" class="color-dot" data-color="#d35400" style="background:#d35400;" title="暖阳橙"></button>
-              <button type="button" class="color-dot" data-color="#7b2cbf" style="background:#7b2cbf;" title="紫罗兰"></button>
+              <button type="button" class="color-dot" data-color="#1a3c6e" style="background:#1a3c6e;" title="藏蓝学术"></button>
+              <button type="button" class="color-dot" data-color="#0f4c81" style="background:#0f4c81;" title="深海商务"></button>
               <button type="button" class="color-dot" data-color="#0077b6" style="background:#0077b6;" title="海青蓝"></button>
-              <button type="button" class="color-dot" data-color="#2c3e50" style="background:#2c3e50;" title="藏青灰"></button>
-              <button type="button" class="color-dot" data-color="#111111" style="background:#111111;" title="极简黑"></button>
+              <button type="button" class="color-dot" data-color="#06d6a0" style="background:#06d6a0;" title="薄荷绿"></button>
+              <button type="button" class="color-dot" data-color="#2d6a4f" style="background:#2d6a4f;" title="青竹绿"></button>
+              <button type="button" class="color-dot" data-color="#606c38" style="background:#606c38;" title="莫兰迪绿"></button>
+              <button type="button" class="color-dot" data-color="#d35400" style="background:#d35400;" title="暖阳橙"></button>
+              <button type="button" class="color-dot" data-color="#c0392b" style="background:#c0392b;" title="中国红"></button>
+              <button type="button" class="color-dot" data-color="#e76f51" style="background:#e76f51;" title="山樱粉"></button>
+              <button type="button" class="color-dot" data-color="#7b2cbf" style="background:#7b2cbf;" title="紫罗兰"></button>
+              <button type="button" class="color-dot" data-color="#8c532b" style="background:#8c532b;" title="复古暖咖"></button>
+              <button type="button" class="color-dot" data-color="#b8860b" style="background:#b8860b;" title="黑金雅致"></button>
+              <button type="button" class="color-dot" data-color="#111111" style="background:#111111;" title="极简纯黑"></button>
               <label class="custom-color-picker" title="自由选色">
                 <input type="color" id="vPrimaryColor" value="#4a90d9">
                 <span id="vColorHex" class="color-hex-tag">#4a90d9</span>
@@ -199,13 +205,13 @@ app.innerHTML = `
 
           <!-- 正文排版 -->
           <div class="vgroup">
-            <div class="vgroup-title">正文版式</div>
+            <div class="vgroup-title">正文版式细节</div>
             <div class="form-grid">
               <label class="vlabel">字体系列
                 <select id="vFontFamily">
-                  <option value="sans">现代无衬线（黑体 / 优雅现代）</option>
-                  <option value="serif">典雅衬线（宋体 / 学术论文）</option>
-                  <option value="mono">等宽代码风</option>
+                  <option value="sans">现代无衬线（黑体 / 现代优雅）</option>
+                  <option value="serif">典雅衬线（宋体 / 严肃学术论文）</option>
+                  <option value="mono">等宽代码风（极客笔记）</option>
                 </select>
               </label>
 
@@ -214,6 +220,7 @@ app.innerHTML = `
                   <button type="button" class="opt-btn" data-val="14">14px 紧凑</button>
                   <button type="button" class="opt-btn active" data-val="15">15px 标准</button>
                   <button type="button" class="opt-btn" data-val="16">16px 舒适</button>
+                  <button type="button" class="opt-btn" data-val="17">17px 大字</button>
                 </div>
               </label>
 
@@ -222,44 +229,78 @@ app.innerHTML = `
                   <button type="button" class="opt-btn" data-val="1.6">1.6 紧凑</button>
                   <button type="button" class="opt-btn active" data-val="1.8">1.8 适中</button>
                   <button type="button" class="opt-btn" data-val="2.0">2.0 舒缓</button>
+                  <button type="button" class="opt-btn" data-val="2.2">2.2 宽松</button>
                 </div>
               </label>
 
-              <label class="vlabel">中文段落缩进
-                <label class="switch-row">
-                  <input type="checkbox" id="vIndent">
-                  <span>首行缩进 2 字符（适合传统文章/论文）</span>
-                </label>
+              <label class="vlabel">正文对齐与缩进
+                <div class="switch-col">
+                  <label class="switch-row">
+                    <input type="checkbox" id="vJustify">
+                    <span>两端对齐 (文本工整端正)</span>
+                  </label>
+                  <label class="switch-row">
+                    <input type="checkbox" id="vIndent">
+                    <span>首行缩进 2 字符 (适合传统散文/论文)</span>
+                  </label>
+                </div>
               </label>
             </div>
           </div>
 
-          <!-- 标题与组件 -->
+          <!-- 标题与重点强调 -->
           <div class="vgroup">
             <div class="vgroup-title">二级标题 (H2) 样式</div>
             <div class="btn-group h2-styles" id="vH2Group">
               <button type="button" class="opt-btn active" data-val="border-left">▌ 左侧竖彩条</button>
               <button type="button" class="opt-btn" data-val="border-bottom">─ 底部强调线</button>
               <button type="button" class="opt-btn" data-val="pill">⬭ 胶囊圆角徽章</button>
+              <button type="button" class="opt-btn" data-val="badge">▍ 宽彩块带底色</button>
+              <button type="button" class="opt-btn" data-val="bracket">【 优雅方头括号 】</button>
               <button type="button" class="opt-btn" data-val="center">✦ 极简居中</button>
+            </div>
+          </div>
+
+          <!-- 强调文字与表格风格 -->
+          <div class="vgroup">
+            <div class="vgroup-title">加粗强调 & 表格排版</div>
+            <div class="form-grid">
+              <label class="vlabel">加粗字 (Strong) 呈现
+                <select id="vStrongStyle">
+                  <option value="color">主题色高亮</option>
+                  <option value="marker">荧光笔下划背景标记</option>
+                  <option value="black">纯黑内敛加粗</option>
+                </select>
+              </label>
+              <label class="vlabel">表格风格
+                <select id="vTableStyle">
+                  <option value="striped">交替斑马纹全网格 (易读)</option>
+                  <option value="academic">学术经典三线表 (顶底粗线无竖线)</option>
+                  <option value="bordered">简约全框方格</option>
+                </select>
+              </label>
             </div>
           </div>
 
           <!-- 引用块与代码 -->
           <div class="vgroup">
-            <div class="vgroup-title">引用块 & 代码块</div>
+            <div class="vgroup-title">引用块 & 代码块配色</div>
             <div class="form-grid">
               <label class="vlabel">引用块风格
                 <select id="vQuoteStyle">
                   <option value="bar">彩条浅底（经典好看）</option>
                   <option value="double-border">双线学术框</option>
-                  <option value="card">浅灰卡片微圆角</option>
+                  <option value="card">浅灰微圆角卡片</option>
+                  <option value="minimal">纯净极简灰边</option>
                 </select>
               </label>
               <label class="vlabel">代码块配色
                 <select id="vCodeTheme">
-                  <option value="one-dark">深色 (One Dark，沉浸专业)</option>
-                  <option value="github-light">浅色 (GitHub Light，清爽干净)</option>
+                  <option value="one-dark">One Dark (深色科技专业)</option>
+                  <option value="github-light">GitHub Light (清爽浅白)</option>
+                  <option value="dracula">Dracula (暗夜吸血鬼高对比)</option>
+                  <option value="monokai">Monokai (复古暖调暗黑)</option>
+                  <option value="solarized-light">Solarized Light (米黄护眼底)</option>
                 </select>
               </label>
             </div>
@@ -269,7 +310,7 @@ app.innerHTML = `
         <!-- 右侧：说明与保存操作 -->
         <div class="visual-sidebar">
           <div class="v-tip">
-            💡 <strong>即时生效</strong>：在此调整任何一项，底层的排版预览会<strong>毫秒级实时刷新</strong>，所见即所得。满意后可保存为新主题。
+            💡 <strong>即时生效 & 同步滚动</strong>：在此调整任何一项，底层的排版预览会<strong>毫秒级实时刷新</strong>；左侧写作与右侧排版支持<strong>平滑双向同步滚动</strong>。
           </div>
           <div class="field-col" style="margin-top:16px;">
             <label class="ctl" style="flex-direction:column;align-items:flex-start;gap:6px;">
@@ -350,6 +391,77 @@ let lastResult: Awaited<ReturnType<typeof convert>> | null = null;
 let activeTab: 'preview' | 'html' = 'preview';
 
 /* ------------------------------------------------------------------ */
+/* 核心：高精度平滑双向同步滚动                                         */
+/* ------------------------------------------------------------------ */
+
+let isScrollingFromEditor = false;
+let isScrollingFromPreview = false;
+let scrollLockTimer: number | undefined;
+
+function getPreviewScrollElement(): HTMLElement | null {
+  try {
+    const doc = preview.contentDocument;
+    if (!doc) return null;
+    return (doc.scrollingElement as HTMLElement) || doc.documentElement || doc.body;
+  } catch {
+    return null;
+  }
+}
+
+// 左侧编辑器滚动 -> 同步右侧预览
+editor.addEventListener('scroll', () => {
+  if (isScrollingFromPreview) return;
+  isScrollingFromEditor = true;
+  window.clearTimeout(scrollLockTimer);
+  scrollLockTimer = window.setTimeout(() => {
+    isScrollingFromEditor = false;
+  }, 100);
+
+  const previewEl = getPreviewScrollElement();
+  if (!previewEl) return;
+  const maxEditor = editor.scrollHeight - editor.clientHeight;
+  if (maxEditor <= 0) return;
+  const ratio = editor.scrollTop / maxEditor;
+  const maxPreview = previewEl.scrollHeight - previewEl.clientHeight;
+  if (maxPreview > 0) {
+    previewEl.scrollTop = ratio * maxPreview;
+  }
+}, { passive: true });
+
+// 右侧预览滚动 -> 同步左侧编辑器
+function bindPreviewScroll() {
+  try {
+    const win = preview.contentWindow;
+    if (!win) return;
+    win.removeEventListener('scroll', handlePreviewScroll);
+    win.addEventListener('scroll', handlePreviewScroll, { passive: true });
+  } catch { /* 忽略跨域/未加载 */ }
+}
+
+function handlePreviewScroll() {
+  if (isScrollingFromEditor) return;
+  isScrollingFromPreview = true;
+  window.clearTimeout(scrollLockTimer);
+  scrollLockTimer = window.setTimeout(() => {
+    isScrollingFromPreview = false;
+  }, 100);
+
+  const previewEl = getPreviewScrollElement();
+  if (!previewEl) return;
+  const maxPreview = previewEl.scrollHeight - previewEl.clientHeight;
+  if (maxPreview <= 0) return;
+  const ratio = previewEl.scrollTop / maxPreview;
+  const maxEditor = editor.scrollHeight - editor.clientHeight;
+  if (maxEditor > 0) {
+    editor.scrollTop = ratio * maxEditor;
+  }
+}
+
+preview.addEventListener('load', () => {
+  bindPreviewScroll();
+});
+
+/* ------------------------------------------------------------------ */
 /* 转换与渲染                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -361,6 +473,12 @@ async function runConvert() {
   if (converting) { pendingConvert = true; return; }
   converting = true;
   try {
+    // 记录重绘前的相对滚动位置
+    const previewElBefore = getPreviewScrollElement();
+    const prevRatio = previewElBefore && (previewElBefore.scrollHeight - previewElBefore.clientHeight > 0)
+      ? previewElBefore.scrollTop / (previewElBefore.scrollHeight - previewElBefore.clientHeight)
+      : 0;
+
     const result = await convert(state.content, {
       inputFormat: state.inputFormat,
       platform: state.platform,
@@ -369,14 +487,27 @@ async function runConvert() {
       zhihuMath: state.zhihuMath,
     });
     lastResult = result;
+
     // 预览
     preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>
       body{margin:0;padding:18px;background:#fff;}
       svg{max-width:100%;}
     </style></head><body>${result.previewHtml}</body></html>`;
+
+    // 恢复滚动位置并重新挂载滚动监听
+    preview.onload = () => {
+      bindPreviewScroll();
+      const previewElAfter = getPreviewScrollElement();
+      if (previewElAfter && prevRatio > 0) {
+        const max = previewElAfter.scrollHeight - previewElAfter.clientHeight;
+        if (max > 0) previewElAfter.scrollTop = prevRatio * max;
+      }
+    };
+
     htmlView.textContent = state.platform === 'zhihu' && state.zhihuPaste === 'plain'
       ? result.plainText
       : result.exportHtml;
+
     // 状态栏
     statsEl.textContent = `${result.stats.chars} 字 · ${result.stats.mathCount} 个公式`;
     if (result.warnings.length) {
@@ -387,7 +518,7 @@ async function runConvert() {
     }
     copyPlainBtn.classList.toggle('hidden', !(state.platform === 'zhihu' && state.zhihuPaste === 'plain'));
     inputHint.textContent = state.inputFormat === 'latex'
-      ? 'LaTeX 子集：公式用 $…$ 或 equation/align 环境'
+      ? 'LaTeX 子集：公式用 $…$ 或 equation/align/gather 环境'
       : 'Markdown';
   } finally {
     converting = false;
@@ -397,7 +528,7 @@ async function runConvert() {
 
 function scheduleConvert() {
   window.clearTimeout(convertTimer);
-  convertTimer = window.setTimeout(runConvert, 300);
+  convertTimer = window.setTimeout(runConvert, 280);
 }
 
 /* ------------------------------------------------------------------ */
@@ -636,12 +767,15 @@ function syncVisualUIFromConfig(cfg: ThemeVisualConfig) {
     b.classList.toggle('active', parseFloat(b.dataset.val!) === cfg.lineHeight);
   }
 
+  $<HTMLInputElement>('#vJustify').checked = cfg.justify;
   $<HTMLInputElement>('#vIndent').checked = cfg.indent;
 
   for (const b of app.querySelectorAll<HTMLButtonElement>('#vH2Group .opt-btn')) {
     b.classList.toggle('active', b.dataset.val === cfg.h2Style);
   }
 
+  $<HTMLSelectElement>('#vStrongStyle').value = cfg.strongStyle;
+  $<HTMLSelectElement>('#vTableStyle').value = cfg.tableStyle;
   $<HTMLSelectElement>('#vQuoteStyle').value = cfg.quoteStyle;
   $<HTMLSelectElement>('#vCodeTheme').value = cfg.codeTheme;
 }
@@ -655,7 +789,6 @@ function applyVisualChange() {
 }
 
 function openThemeModal() {
-  // 填充基准下拉框
   vBasePreset.innerHTML = '';
   themeBaseSel.innerHTML = '';
   for (const t of allThemes()) {
@@ -727,7 +860,11 @@ $('#vLineHeightGroup').addEventListener('click', (e) => {
   applyVisualChange();
 });
 
-// 首行缩进
+// 两端对齐与首行缩进
+$<HTMLInputElement>('#vJustify').addEventListener('change', (e) => {
+  curVisualConfig.justify = (e.target as HTMLInputElement).checked;
+  applyVisualChange();
+});
 $<HTMLInputElement>('#vIndent').addEventListener('change', (e) => {
   curVisualConfig.indent = (e.target as HTMLInputElement).checked;
   applyVisualChange();
@@ -742,7 +879,15 @@ $('#vH2Group').addEventListener('click', (e) => {
   applyVisualChange();
 });
 
-// 引用块与代码
+// 强调字、表格、引用块与代码
+$<HTMLSelectElement>('#vStrongStyle').addEventListener('change', (e) => {
+  curVisualConfig.strongStyle = (e.target as HTMLSelectElement).value as StrongStyleType;
+  applyVisualChange();
+});
+$<HTMLSelectElement>('#vTableStyle').addEventListener('change', (e) => {
+  curVisualConfig.tableStyle = (e.target as HTMLSelectElement).value as TableStyleType;
+  applyVisualChange();
+});
 $<HTMLSelectElement>('#vQuoteStyle').addEventListener('change', (e) => {
   curVisualConfig.quoteStyle = (e.target as HTMLSelectElement).value as BlockquoteStyleType;
   applyVisualChange();

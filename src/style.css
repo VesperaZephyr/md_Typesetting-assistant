@@ -598,13 +598,19 @@ body.phone-width .preview-frame {
   font-weight: 600;
 }
 
+.switch-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
 .switch-row {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
   user-select: none;
-  margin-top: 4px;
   font-size: 13px;
   color: #333;
 }
