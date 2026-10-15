@@ -2,8 +2,8 @@
  * 主题系统：每个主题 = 「选择器 → 内联 CSS」映射 + 代码高亮配色。
  * 全部落到 style 属性上，公众号编辑器只认内联样式。
  *
- * 既支持专家模式直接编辑 JSON/CSS，
- * 也支持直觉模式（通过可视化的色彩、字号、行距、标题版式、首行缩进、三线表、代码配色等参数一键生成）。
+ * 现已原汁原味还原 mdnice 官方 15 套高颜值爆款主题，
+ * 兼具直观模式与代码模式自由调节能力。
  */
 
 export interface Theme {
@@ -18,7 +18,7 @@ export interface Theme {
 }
 
 export type FontFamilyType = 'sans' | 'serif' | 'mono';
-export type H2StyleType = 'border-left' | 'border-bottom' | 'pill' | 'bracket' | 'center' | 'badge';
+export type H2StyleType = 'border-left' | 'border-bottom' | 'pill' | 'solid-pill' | 'bracket' | 'center' | 'badge';
 export type BlockquoteStyleType = 'bar' | 'card' | 'double-border' | 'minimal';
 export type TableStyleType = 'striped' | 'academic' | 'bordered';
 export type StrongStyleType = 'color' | 'black' | 'marker';
@@ -39,7 +39,7 @@ export interface ThemeVisualConfig {
   codeTheme: CodeThemeType;
 }
 
-export const DEFAULT_THEME_NAME = '默认 · 科技蓝';
+export const DEFAULT_THEME_NAME = '橙心 · 暖橙徽章 (mdnice官方)';
 
 /* ------------------------------------------------------------------ */
 /* 代码高亮配色方案                                                    */
@@ -141,7 +141,7 @@ export function buildThemeFromVisualConfig(name: string, config: ThemeVisualConf
   const pMedium = hexToRgba(p, 0.16);
   const pBorder = hexToRgba(p, 0.28);
 
-  let fontCss = '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif';
+  let fontCss = 'Optima-Regular, Optima, PingFangSC-light, PingFang TC, "PingFang SC", Cambria, Cochin, Georgia, Times, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif';
   if (config.fontFamily === 'serif') {
     fontCss = 'Georgia, "Nimbus Roman No9 L", "Songti SC", SimSun, "Times New Roman", serif';
   } else if (config.fontFamily === 'mono') {
@@ -149,31 +149,40 @@ export function buildThemeFromVisualConfig(name: string, config: ThemeVisualConf
   }
 
   // H2 样式构造
-  let h2Css = `margin:1.8em 0 1em;font-size:${config.fontSize + 4}px;font-weight:bold;color:${tc};line-height:1.4;`;
-  if (config.h2Style === 'border-left') {
-    h2Css += `border-left:4.5px solid ${p};padding-left:11px;`;
-  } else if (config.h2Style === 'border-bottom') {
-    h2Css += `border-bottom:2px solid ${p};padding-bottom:6px;`;
+  let h2Css = `margin:1.8em 0 1em;font-size:${config.fontSize + 4}px;font-weight:bold;line-height:1.4;`;
+  if (config.h2Style === 'solid-pill') {
+    // mdnice 橙心风格：实心色块徽章，白字
+    h2Css += `background:${p};color:#ffffff;padding:4px 14px;border-radius:4px;display:inline-block;letter-spacing:0.5px;`;
   } else if (config.h2Style === 'pill') {
-    h2Css += `background:${pLight};color:${p};padding:6px 15px;border-radius:20px;display:inline-block;`;
+    // 浅底胶囊徽章
+    h2Css += `background:${pLight};color:${p};padding:5px 15px;border-radius:20px;display:inline-block;`;
+  } else if (config.h2Style === 'border-bottom') {
+    // 底部线条
+    h2Css += `border-bottom:2px solid ${p};padding-bottom:5px;color:${p};display:inline-block;`;
+  } else if (config.h2Style === 'border-left') {
+    // 左粗竖条
+    h2Css += `border-left:4.5px solid ${p};padding-left:11px;color:${tc};`;
   } else if (config.h2Style === 'bracket') {
+    // 优雅方头括号
     h2Css += `text-align:center;color:${p};letter-spacing:1px;`;
   } else if (config.h2Style === 'center') {
-    h2Css += `text-align:center;letter-spacing:1px;`;
+    // 极简居中
+    h2Css += `text-align:center;letter-spacing:1px;color:${tc};`;
   } else if (config.h2Style === 'badge') {
-    h2Css += `border-left:7px solid ${p};background:${pLight};padding:6px 12px;border-radius:0 6px 6px 0;color:${p};`;
+    // 左侧彩色强调块
+    h2Css += `border-left:7px solid ${p};background:${pLight};padding:6px 14px;border-radius:0 6px 6px 0;color:${p};`;
   }
 
   // 引用块样式构造
   let bqCss = `margin:1.4em 0;padding:12px 16px;color:#555;`;
   if (config.quoteStyle === 'bar') {
-    bqCss += `border-left:4px solid ${p};background:${pLight};border-radius:0 6px 6px 0;`;
+    bqCss += `border-left:3.5px solid ${p};background:${pLight};border-radius:0 6px 6px 0;`;
   } else if (config.quoteStyle === 'card') {
     bqCss += `background:#f6f8fa;border:1px solid #e1e4e8;border-radius:8px;`;
   } else if (config.quoteStyle === 'double-border') {
     bqCss += `border-left:3.5px double ${p};background:${pLight};`;
   } else if (config.quoteStyle === 'minimal') {
-    bqCss += `border-left:2px solid #999;background:transparent;padding:6px 14px;color:#666;`;
+    bqCss += `border-left:2px solid #888;background:transparent;padding:6px 14px;color:#666;`;
   }
 
   // 加粗强调构造
@@ -192,16 +201,13 @@ export function buildThemeFromVisualConfig(name: string, config: ThemeVisualConf
   let tdCss = `padding:8px 12px;`;
 
   if (config.tableStyle === 'academic') {
-    // 经典学术三线表：顶线底线粗实线，中间分隔细线，无竖线
     tableCss += `border-top:2px solid ${tc};border-bottom:2px solid ${tc};`;
     thCss += `border-bottom:1px solid ${tc};background:transparent;color:${tc};text-align:left;`;
     tdCss += `border:none;border-bottom:1px solid #eaecef;`;
   } else if (config.tableStyle === 'striped') {
-    // 斑马纹全网格
     thCss += `border:1px solid #dfe2e5;background:${pLight};color:${tc};text-align:left;`;
     tdCss += `border:1px solid #dfe2e5;`;
   } else {
-    // 简约方格
     thCss += `border:1px solid #dfe2e5;background:#f8f9fa;color:${tc};text-align:left;`;
     tdCss += `border:1px solid #dfe2e5;`;
   }
@@ -288,11 +294,12 @@ export function extractVisualConfig(theme: Theme): ThemeVisualConfig {
   // 提取主题色
   const colorM = /color:\s*(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\))/.exec(strong)
     || /border-left:[^;]*?(#[0-9a-fA-F]{3,8})/.exec(h2)
-    || /border-bottom:[^;]*?(#[0-9a-fA-F]{3,8})/.exec(h2);
-  const primaryColor = colorM ? colorM[1]! : '#4a90d9';
+    || /border-bottom:[^;]*?(#[0-9a-fA-F]{3,8})/.exec(h2)
+    || /background:\s*(#[0-9a-fA-F]{3,8})/.exec(h2);
+  const primaryColor = colorM ? colorM[1]! : '#ef7060';
 
   const textM = /color:\s*(#[0-9a-fA-F]{3,8})/.exec(root);
-  const textColor = textM ? textM[1]! : '#3f3f3f';
+  const textColor = textM ? textM[1]! : '#222222';
 
   let fontFamily: FontFamilyType = 'sans';
   if (/serif|Songti|SimSun|Times/i.test(root)) fontFamily = 'serif';
@@ -307,12 +314,14 @@ export function extractVisualConfig(theme: Theme): ThemeVisualConfig {
   const justify = /justify/.test(root);
   const indent = /text-indent:\s*2em/.test(p);
 
-  let h2Style: H2StyleType = 'border-left';
-  if (/border-left:\s*7px/.test(h2)) h2Style = 'badge';
+  let h2Style: H2StyleType = 'solid-pill';
+  if (/color:#ffffff;padding:4px/.test(h2)) h2Style = 'solid-pill';
+  else if (/border-left:\s*7px/.test(h2)) h2Style = 'badge';
   else if (/border-bottom/.test(h2)) h2Style = 'border-bottom';
   else if (/border-radius:\s*20px|border-radius:\s*1[5-9]px/.test(h2)) h2Style = 'pill';
   else if (/bracket/.test(h2)) h2Style = 'bracket';
   else if (/text-align:\s*center/.test(h2)) h2Style = 'center';
+  else if (/border-left/.test(h2)) h2Style = 'border-left';
 
   let quoteStyle: BlockquoteStyleType = 'bar';
   if (/border-left:[^;]*double/.test(bq)) quoteStyle = 'double-border';
@@ -334,8 +343,8 @@ export function extractVisualConfig(theme: Theme): ThemeVisualConfig {
   else if (pre.includes('#fdf6e3')) codeTheme = 'solarized-light';
 
   return {
-    primaryColor: primaryColor.startsWith('#') ? primaryColor : '#4a90d9',
-    textColor: textColor.startsWith('#') ? textColor : '#3f3f3f',
+    primaryColor: primaryColor.startsWith('#') ? primaryColor : '#ef7060',
+    textColor: textColor.startsWith('#') ? textColor : '#222222',
     fontFamily,
     fontSize: [14, 15, 16, 17].includes(fontSize) ? fontSize : 15,
     lineHeight: lineHeight >= 2.1 ? 2.2 : (lineHeight >= 1.95 ? 2.0 : (lineHeight <= 1.7 ? 1.6 : 1.8)),
@@ -350,14 +359,62 @@ export function extractVisualConfig(theme: Theme): ThemeVisualConfig {
 }
 
 /* ------------------------------------------------------------------ */
-/* 16 套经典高质量开箱即用内置主题                                     */
+/* 18 套精选内置主题（完整还原 mdnice 官方经典 + 学术论文规范）       */
 /* ------------------------------------------------------------------ */
 
 export const BUILTIN_THEMES: Theme[] = [
-  // 1. 默认 · 科技蓝
-  buildThemeFromVisualConfig('默认 · 科技蓝', {
-    primaryColor: '#4a90d9',
-    textColor: '#3f3f3f',
+  // 1. 橙心 · 暖橙徽章 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('橙心 · 暖橙徽章 (mdnice官方)', {
+    primaryColor: '#ef7060',
+    textColor: '#222222',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'solid-pill',
+    quoteStyle: 'bar',
+    tableStyle: 'striped',
+    strongStyle: 'color',
+    codeTheme: 'one-dark',
+  }),
+
+  // 2. 绿意 · 清新森林 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('绿意 · 清新森林 (mdnice官方)', {
+    primaryColor: '#35b378',
+    textColor: '#2b2b2b',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'pill',
+    quoteStyle: 'bar',
+    tableStyle: 'striped',
+    strongStyle: 'color',
+    codeTheme: 'one-dark',
+  }),
+
+  // 3. 兰青 · 墨竹雅韵 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('兰青 · 墨竹雅韵 (mdnice官方)', {
+    primaryColor: '#009688',
+    textColor: '#2a2a2a',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'border-bottom',
+    quoteStyle: 'bar',
+    tableStyle: 'striped',
+    strongStyle: 'color',
+    codeTheme: 'one-dark',
+  }),
+
+  // 4. 姹紫 · 优雅高贵 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('姹紫 · 优雅高贵 (mdnice官方)', {
+    primaryColor: '#773098',
+    textColor: '#2c2c2c',
     fontFamily: 'sans',
     fontSize: 15,
     lineHeight: 1.8,
@@ -370,8 +427,184 @@ export const BUILTIN_THEMES: Theme[] = [
     codeTheme: 'one-dark',
   }),
 
-  // 2. 学术蓝 · 衬线
-  buildThemeFromVisualConfig('学术蓝 · 衬线', {
+  // 5. 红绯 · 典雅绛红 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('红绯 · 典雅绛红 (mdnice官方)', {
+    primaryColor: '#d84c37',
+    textColor: '#222222',
+    fontFamily: 'serif',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'border-bottom',
+    quoteStyle: 'bar',
+    tableStyle: 'striped',
+    strongStyle: 'color',
+    codeTheme: 'one-dark',
+  }),
+
+  // 6. 蓝莹 · 极简天蓝 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('蓝莹 · 极简天蓝 (mdnice官方)', {
+    primaryColor: '#2980b9',
+    textColor: '#2c3e50',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'border-left',
+    quoteStyle: 'bar',
+    tableStyle: 'striped',
+    strongStyle: 'color',
+    codeTheme: 'one-dark',
+  }),
+
+  // 7. 山吹 · 明快金黄 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('山吹 · 明快金黄 (mdnice官方)', {
+    primaryColor: '#e29c45',
+    textColor: '#333333',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'badge',
+    quoteStyle: 'bar',
+    tableStyle: 'striped',
+    strongStyle: 'color',
+    codeTheme: 'one-dark',
+  }),
+
+  // 8. 全栈蓝 · 极客现代 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('全栈蓝 · 极客现代 (mdnice官方)', {
+    primaryColor: '#40b8fa',
+    textColor: '#222222',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'solid-pill',
+    quoteStyle: 'card',
+    tableStyle: 'striped',
+    strongStyle: 'color',
+    codeTheme: 'one-dark',
+  }),
+
+  // 9. 极客黑 · 质感暗夜 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('极客黑 · 质感暗夜 (mdnice官方)', {
+    primaryColor: '#212122',
+    textColor: '#24292e',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'solid-pill',
+    quoteStyle: 'minimal',
+    tableStyle: 'academic',
+    strongStyle: 'black',
+    codeTheme: 'one-dark',
+  }),
+
+  // 10. 蔷薇紫 · 浪漫雅致 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('蔷薇紫 · 浪漫雅致 (mdnice官方)', {
+    primaryColor: '#9c27b0',
+    textColor: '#333333',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'pill',
+    quoteStyle: 'bar',
+    tableStyle: 'striped',
+    strongStyle: 'color',
+    codeTheme: 'one-dark',
+  }),
+
+  // 11. 嫩青 · 润泽护眼 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('嫩青 · 润泽护眼 (mdnice官方)', {
+    primaryColor: '#52b788',
+    textColor: '#2d3748',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'pill',
+    quoteStyle: 'bar',
+    tableStyle: 'striped',
+    strongStyle: 'color',
+    codeTheme: 'one-dark',
+  }),
+
+  // 12. 前端之巅 · 经典技术 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('前端之巅 · 经典技术 (mdnice官方)', {
+    primaryColor: '#3c70c6',
+    textColor: '#24292f',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'border-left',
+    quoteStyle: 'card',
+    tableStyle: 'striped',
+    strongStyle: 'color',
+    codeTheme: 'one-dark',
+  }),
+
+  // 13. 重影 · 现代谍影 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('重影 · 现代谍影 (mdnice官方)', {
+    primaryColor: '#3e3e3e',
+    textColor: '#222222',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'badge',
+    quoteStyle: 'card',
+    tableStyle: 'bordered',
+    strongStyle: 'marker',
+    codeTheme: 'github-light',
+  }),
+
+  // 14. 雁栖湖 · 青春学术 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('雁栖湖 · 青春学术 (mdnice官方)', {
+    primaryColor: '#2584b5',
+    textColor: '#2c3e50',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'border-bottom',
+    quoteStyle: 'bar',
+    tableStyle: 'striped',
+    strongStyle: 'color',
+    codeTheme: 'one-dark',
+  }),
+
+  // 15. 柠檬黄 · 活力维他命 (mdnice 官方代表作)
+  buildThemeFromVisualConfig('柠檬黄 · 活力维他命 (mdnice官方)', {
+    primaryColor: '#e78e34',
+    textColor: '#333333',
+    fontFamily: 'sans',
+    fontSize: 15,
+    lineHeight: 1.8,
+    justify: true,
+    indent: false,
+    h2Style: 'badge',
+    quoteStyle: 'bar',
+    tableStyle: 'striped',
+    strongStyle: 'marker',
+    codeTheme: 'monokai',
+  }),
+
+  // 16. 学术规范 · 衬线三线表 (数学与科研论文专享)
+  buildThemeFromVisualConfig('学术规范 · 衬线三线表', {
     primaryColor: '#1a3c6e',
     textColor: '#2c3e50',
     fontFamily: 'serif',
@@ -386,8 +619,8 @@ export const BUILTIN_THEMES: Theme[] = [
     codeTheme: 'one-dark',
   }),
 
-  // 3. 极简黑白 · 纯净
-  buildThemeFromVisualConfig('极简黑白 · 纯净', {
+  // 17. 极简黑白 · 纯净阅读
+  buildThemeFromVisualConfig('极简黑白 · 纯净阅读', {
     primaryColor: '#111111',
     textColor: '#222222',
     fontFamily: 'sans',
@@ -402,26 +635,10 @@ export const BUILTIN_THEMES: Theme[] = [
     codeTheme: 'github-light',
   }),
 
-  // 4. 中国红 · 典雅
-  buildThemeFromVisualConfig('中国红 · 典雅', {
-    primaryColor: '#c0392b',
-    textColor: '#2b2b2b',
-    fontFamily: 'serif',
-    fontSize: 15,
-    lineHeight: 1.8,
-    justify: true,
-    indent: false,
-    h2Style: 'border-bottom',
-    quoteStyle: 'bar',
-    tableStyle: 'striped',
-    strongStyle: 'color',
-    codeTheme: 'one-dark',
-  }),
-
-  // 5. 暖橙杂志 · 活力
-  buildThemeFromVisualConfig('暖橙杂志 · 活力', {
-    primaryColor: '#d35400',
-    textColor: '#3d342d',
+  // 18. 默认 · 经典科技蓝
+  buildThemeFromVisualConfig('默认 · 经典科技蓝', {
+    primaryColor: '#4a90d9',
+    textColor: '#3f3f3f',
     fontFamily: 'sans',
     fontSize: 15,
     lineHeight: 1.8,
@@ -432,182 +649,6 @@ export const BUILTIN_THEMES: Theme[] = [
     tableStyle: 'striped',
     strongStyle: 'color',
     codeTheme: 'one-dark',
-  }),
-
-  // 6. 青竹绿意 · 护眼
-  buildThemeFromVisualConfig('青竹绿意 · 护眼', {
-    primaryColor: '#2d6a4f',
-    textColor: '#344038',
-    fontFamily: 'sans',
-    fontSize: 15,
-    lineHeight: 1.8,
-    justify: true,
-    indent: false,
-    h2Style: 'pill',
-    quoteStyle: 'bar',
-    tableStyle: 'striped',
-    strongStyle: 'color',
-    codeTheme: 'one-dark',
-  }),
-
-  // 7. 紫罗兰 · 知性
-  buildThemeFromVisualConfig('紫罗兰 · 知性', {
-    primaryColor: '#7b2cbf',
-    textColor: '#383344',
-    fontFamily: 'sans',
-    fontSize: 15,
-    lineHeight: 1.8,
-    justify: true,
-    indent: false,
-    h2Style: 'border-left',
-    quoteStyle: 'bar',
-    tableStyle: 'striped',
-    strongStyle: 'color',
-    codeTheme: 'one-dark',
-  }),
-
-  // 8. 科技青 · 胶囊
-  buildThemeFromVisualConfig('科技青 · 胶囊', {
-    primaryColor: '#0077b6',
-    textColor: '#2b2d42',
-    fontFamily: 'sans',
-    fontSize: 15,
-    lineHeight: 1.8,
-    justify: true,
-    indent: false,
-    h2Style: 'pill',
-    quoteStyle: 'card',
-    tableStyle: 'striped',
-    strongStyle: 'color',
-    codeTheme: 'one-dark',
-  }),
-
-  // 9. 深海幽蓝 · 商务
-  buildThemeFromVisualConfig('深海幽蓝 · 商务', {
-    primaryColor: '#0f4c81',
-    textColor: '#1f2937',
-    fontFamily: 'sans',
-    fontSize: 15,
-    lineHeight: 1.8,
-    justify: true,
-    indent: false,
-    h2Style: 'badge',
-    quoteStyle: 'bar',
-    tableStyle: 'striped',
-    strongStyle: 'color',
-    codeTheme: 'one-dark',
-  }),
-
-  // 10. 复古暖咖 · 羊皮纸
-  buildThemeFromVisualConfig('复古暖咖 · 羊皮纸', {
-    primaryColor: '#8c532b',
-    textColor: '#3e342f',
-    fontFamily: 'serif',
-    fontSize: 15,
-    lineHeight: 1.9,
-    justify: true,
-    indent: true,
-    h2Style: 'border-bottom',
-    quoteStyle: 'double-border',
-    tableStyle: 'academic',
-    strongStyle: 'color',
-    codeTheme: 'solarized-light',
-  }),
-
-  // 11. 薄荷苏打 · 清凉
-  buildThemeFromVisualConfig('薄荷苏打 · 清凉', {
-    primaryColor: '#06d6a0',
-    textColor: '#264653',
-    fontFamily: 'sans',
-    fontSize: 15,
-    lineHeight: 1.8,
-    justify: true,
-    indent: false,
-    h2Style: 'pill',
-    quoteStyle: 'card',
-    tableStyle: 'striped',
-    strongStyle: 'marker',
-    codeTheme: 'github-light',
-  }),
-
-  // 12. 赛博暗夜 · 霓虹
-  buildThemeFromVisualConfig('赛博暗夜 · 霓虹', {
-    primaryColor: '#00f5d4',
-    textColor: '#212529',
-    fontFamily: 'mono',
-    fontSize: 15,
-    lineHeight: 1.7,
-    justify: false,
-    indent: false,
-    h2Style: 'badge',
-    quoteStyle: 'bar',
-    tableStyle: 'bordered',
-    strongStyle: 'marker',
-    codeTheme: 'dracula',
-  }),
-
-  // 13. 黑金尊享 · 商业
-  buildThemeFromVisualConfig('黑金尊享 · 商业', {
-    primaryColor: '#b8860b',
-    textColor: '#222222',
-    fontFamily: 'serif',
-    fontSize: 15,
-    lineHeight: 1.9,
-    justify: true,
-    indent: false,
-    h2Style: 'bracket',
-    quoteStyle: 'double-border',
-    tableStyle: 'academic',
-    strongStyle: 'color',
-    codeTheme: 'one-dark',
-  }),
-
-  // 14. 山樱落绯 · 柔粉
-  buildThemeFromVisualConfig('山樱落绯 · 柔粉', {
-    primaryColor: '#e76f51',
-    textColor: '#3d3a45',
-    fontFamily: 'sans',
-    fontSize: 15,
-    lineHeight: 1.8,
-    justify: true,
-    indent: false,
-    h2Style: 'pill',
-    quoteStyle: 'bar',
-    tableStyle: 'striped',
-    strongStyle: 'marker',
-    codeTheme: 'github-light',
-  }),
-
-  // 15. 莫兰迪灰绿 · 慵懒
-  buildThemeFromVisualConfig('莫兰迪灰绿 · 慵懒', {
-    primaryColor: '#606c38',
-    textColor: '#283618',
-    fontFamily: 'sans',
-    fontSize: 15,
-    lineHeight: 1.8,
-    justify: true,
-    indent: false,
-    h2Style: 'border-left',
-    quoteStyle: 'card',
-    tableStyle: 'striped',
-    strongStyle: 'color',
-    codeTheme: 'one-dark',
-  }),
-
-  // 16. 晨曦金黄 · 明朗
-  buildThemeFromVisualConfig('晨曦金黄 · 明朗', {
-    primaryColor: '#e9a11f',
-    textColor: '#333333',
-    fontFamily: 'sans',
-    fontSize: 15,
-    lineHeight: 1.8,
-    justify: true,
-    indent: false,
-    h2Style: 'badge',
-    quoteStyle: 'bar',
-    tableStyle: 'striped',
-    strongStyle: 'marker',
-    codeTheme: 'monokai',
   }),
 ].map((t) => ({ ...t, builtin: true }));
 

@@ -123,6 +123,10 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   let preamble = '';
   let mathMacros: ReturnType<typeof latexToMarkdown>['macros'] = [];
 
+  if (source.includes('\\begin{tikzcd}') || source.includes('\\begin{tikzpicture}')) {
+    warnings.push('💡 检测到 tikz-cd/tikzpicture 交换图：建议在本地编译或在线工具（如 tikzcd.yichuanshen.de ）一键导出为矢量 SVG/PNG 图片插入，可获最高清显示并完美兼容微信与知乎。');
+  }
+
   if (opts.inputFormat === 'latex') {
     const r = latexToMarkdown(source);
     skeleton = r.markdown;

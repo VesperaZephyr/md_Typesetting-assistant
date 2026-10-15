@@ -182,23 +182,23 @@ app.innerHTML = `
           <div class="vgroup">
             <div class="vgroup-title">主色调（自动作用于标题边条、强调字、链接、引用框）</div>
             <div class="color-palette" id="colorPalette">
-              <button type="button" class="color-dot" data-color="#4a90d9" style="background:#4a90d9;" title="科技蓝"></button>
+              <button type="button" class="color-dot" data-color="#ef7060" style="background:#ef7060;" title="橙心暖橙"></button>
+              <button type="button" class="color-dot" data-color="#35b378" style="background:#35b378;" title="绿意森林"></button>
+              <button type="button" class="color-dot" data-color="#009688" style="background:#009688;" title="兰青雅墨"></button>
+              <button type="button" class="color-dot" data-color="#773098" style="background:#773098;" title="姹紫高贵"></button>
+              <button type="button" class="color-dot" data-color="#d84c37" style="background:#d84c37;" title="红绯朱红"></button>
+              <button type="button" class="color-dot" data-color="#e29c45" style="background:#e29c45;" title="山吹金黄"></button>
+              <button type="button" class="color-dot" data-color="#4a90d9" style="background:#4a90d9;" title="科技天蓝"></button>
               <button type="button" class="color-dot" data-color="#1a3c6e" style="background:#1a3c6e;" title="藏蓝学术"></button>
-              <button type="button" class="color-dot" data-color="#0f4c81" style="background:#0f4c81;" title="深海商务"></button>
-              <button type="button" class="color-dot" data-color="#0077b6" style="background:#0077b6;" title="海青蓝"></button>
-              <button type="button" class="color-dot" data-color="#06d6a0" style="background:#06d6a0;" title="薄荷绿"></button>
-              <button type="button" class="color-dot" data-color="#2d6a4f" style="background:#2d6a4f;" title="青竹绿"></button>
-              <button type="button" class="color-dot" data-color="#606c38" style="background:#606c38;" title="莫兰迪绿"></button>
-              <button type="button" class="color-dot" data-color="#d35400" style="background:#d35400;" title="暖阳橙"></button>
-              <button type="button" class="color-dot" data-color="#c0392b" style="background:#c0392b;" title="中国红"></button>
-              <button type="button" class="color-dot" data-color="#e76f51" style="background:#e76f51;" title="山樱粉"></button>
-              <button type="button" class="color-dot" data-color="#7b2cbf" style="background:#7b2cbf;" title="紫罗兰"></button>
-              <button type="button" class="color-dot" data-color="#8c532b" style="background:#8c532b;" title="复古暖咖"></button>
-              <button type="button" class="color-dot" data-color="#b8860b" style="background:#b8860b;" title="黑金雅致"></button>
-              <button type="button" class="color-dot" data-color="#111111" style="background:#111111;" title="极简纯黑"></button>
+              <button type="button" class="color-dot" data-color="#40b8fa" style="background:#40b8fa;" title="全栈冰蓝"></button>
+              <button type="button" class="color-dot" data-color="#2584b5" style="background:#2584b5;" title="雁栖湖蓝"></button>
+              <button type="button" class="color-dot" data-color="#9c27b0" style="background:#9c27b0;" title="蔷薇雅紫"></button>
+              <button type="button" class="color-dot" data-color="#52b788" style="background:#52b788;" title="嫩青初春"></button>
+              <button type="button" class="color-dot" data-color="#e78e34" style="background:#e78e34;" title="柠檬暖黄"></button>
+              <button type="button" class="color-dot" data-color="#212122" style="background:#212122;" title="极客暗黑"></button>
               <label class="custom-color-picker" title="自由选色">
-                <input type="color" id="vPrimaryColor" value="#4a90d9">
-                <span id="vColorHex" class="color-hex-tag">#4a90d9</span>
+                <input type="color" id="vPrimaryColor" value="#ef7060">
+                <span id="vColorHex" class="color-hex-tag">#ef7060</span>
               </label>
             </div>
           </div>
@@ -252,9 +252,10 @@ app.innerHTML = `
           <div class="vgroup">
             <div class="vgroup-title">二级标题 (H2) 样式</div>
             <div class="btn-group h2-styles" id="vH2Group">
-              <button type="button" class="opt-btn active" data-val="border-left">▌ 左侧竖彩条</button>
+              <button type="button" class="opt-btn active" data-val="solid-pill">■ 橙心实色徽章</button>
+              <button type="button" class="opt-btn" data-val="border-left">▌ 左侧竖彩条</button>
               <button type="button" class="opt-btn" data-val="border-bottom">─ 底部强调线</button>
-              <button type="button" class="opt-btn" data-val="pill">⬭ 胶囊圆角徽章</button>
+              <button type="button" class="opt-btn" data-val="pill">⬭ 胶囊圆角浅徽章</button>
               <button type="button" class="opt-btn" data-val="badge">▍ 宽彩块带底色</button>
               <button type="button" class="opt-btn" data-val="bracket">【 优雅方头括号 】</button>
               <button type="button" class="opt-btn" data-val="center">✦ 极简居中</button>
