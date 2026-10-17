@@ -6,7 +6,7 @@
 import { md } from './markdown';
 import { extractMath, restoreMath, type MathSeg } from './mathExtract';
 import { latexToMarkdown, expandZeroArgMacros } from './latex';
-import { renderTexToSvg, svgToPng, MathRenderError } from './mathRender';
+import { renderTexToSvg, renderTexToPng, MathRenderError } from './mathRender';
 import { applyThemeStyles, type Theme } from './themes';
 import {
   inlineHljsColors, stripClasses, stripStyles,
@@ -52,8 +52,7 @@ function renderSegSvg(seg: MathSeg, preamble: string): string {
 function renderSegPng(seg: MathSeg, preamble: string) {
   return (async () => {
     try {
-      const svg = renderTexToSvg(seg.tex, seg.display, preamble);
-      const png = await svgToPng(svg);
+      const png = await renderTexToPng(seg.tex, seg.display, preamble);
       const style = `vertical-align:${png.vAlign}px;width:${png.width}px;height:${png.height}px;max-width:100%;`;
       const img = `<img src="${png.dataUrl}" style="${style}" alt="公式">`;
       if (seg.display) {
@@ -110,7 +109,18 @@ async function substitute(
   for (let i = 0; i < segs.length; i++) {
     rendered.set('@@MATH' + i + '@@', await renderOne(segs[i]!));
   }
-  return skeletonHtml.replace(/@@MATH(\d+)@@/g, (m0, idx) => rendered.get('@@MATH' + idx + '@@') ?? m0);
+
+  // 行间公式独占段落时，把整个 <p> 一起替换为块级标记。
+  // 否则会产出非法的 <p><section>…</section></p>，公众号解析时可能多出空行。
+  const blockMath = opts.platform === 'wechat' || (opts.platform === 'zhihu' && opts.zhihuMath === 'eeimg');
+  let html = skeletonHtml;
+  if (blockMath) {
+    html = html.replace(/<p(?:\s[^>]*)?>\s*@@MATH(\d+)@@\s*<\/p>/g, (m0, idx: string) => {
+      const seg = segs[Number(idx)];
+      return seg?.display ? (rendered.get('@@MATH' + idx + '@@') ?? m0) : m0;
+    });
+  }
+  return html.replace(/@@MATH(\d+)@@/g, (m0, idx) => rendered.get('@@MATH' + idx + '@@') ?? m0);
 }
 
 /**

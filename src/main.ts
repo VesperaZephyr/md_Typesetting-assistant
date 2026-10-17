@@ -2,7 +2,7 @@ import './style.css';
 import { convert, type InputFormat, type Platform, type WechatMath } from './core/pipeline';
 import {
   BUILTIN_THEMES, DEFAULT_THEME_NAME, validateTheme,
-  buildThemeFromVisualConfig, extractVisualConfig,
+  buildThemeFromVisualConfig, extractVisualConfig, applyThemeStyles,
   type Theme, type ThemeVisualConfig, type FontFamilyType, type H2StyleType,
   type BlockquoteStyleType, type TableStyleType, type StrongStyleType, type CodeThemeType,
 } from './core/themes';
@@ -142,7 +142,7 @@ app.innerHTML = `
       <label class="phone-toggle"><input type="checkbox" id="phoneWidth"> 手机宽度</label>
     </div>
     <div class="pane-body">
-      <iframe id="preview" class="preview-frame"></iframe>
+      <iframe id="preview" class="preview-frame" sandbox="allow-scripts"></iframe>
       <pre id="htmlView" class="html-view hidden"></pre>
     </div>
     <div class="statusbar">
@@ -153,31 +153,26 @@ app.innerHTML = `
   </section>
 </main>
 
-<!-- 排版与主题弹窗（双模式：直觉模式 + 专家代码） -->
-<div id="themeModal" class="modal hidden">
-  <div class="modal-card wide theme-modal-card">
-    <div class="modal-head">
+<!-- 主题抽屉：编辑主题时右侧预览始终可见 -->
+<div id="themeModal" class="theme-drawer hidden">
+  <div class="drawer-card">
+    <div class="modal-head drawer-head">
       <div class="modal-tabs">
-        <button class="modal-tab active" data-modaltab="visual">🎨 直观调节（推荐）</button>
-        <button class="modal-tab" data-modaltab="code">💻 专家代码 (JSON/CSS)</button>
+        <button class="modal-tab active" data-modaltab="visual">🎨 直观调节</button>
+        <button class="modal-tab" data-modaltab="code">💻 专家代码 (JSON)</button>
       </div>
-      <button class="modal-close" id="themeCloseBtn">✕</button>
+      <button class="modal-close" id="themeCloseBtn" title="关闭（未保存的修改将还原）">✕</button>
     </div>
 
     <!-- 直观调节面板 -->
-    <div id="visualTabPanel" class="modal-body theme-visual-panel">
-      <div class="visual-grid">
+    <div id="visualTabPanel" class="drawer-body theme-visual-panel">
+      <div class="gallery-head">
+        <div class="vgroup-title">主题库 <span class="vgroup-sub">点击卡片即刻预览</span></div>
+        <button type="button" id="galleryToggle" class="link-btn">收起</button>
+      </div>
+      <div id="themeGallery" class="theme-gallery"></div>
 
-        <!-- 左侧：控件组 -->
-        <div class="visual-controls">
-          <!-- 预设基准 -->
-          <div class="vgroup">
-            <div class="vgroup-title">基准预设（快速换装，16 款经典设计）</div>
-            <div class="field-row">
-              <select id="vBasePreset" class="full-select"></select>
-            </div>
-          </div>
-
+      <div class="visual-controls">
           <!-- 主题主色调 -->
           <div class="vgroup">
             <div class="vgroup-title">主色调（自动作用于标题边条、强调字、链接、引用框）</div>
@@ -307,31 +302,10 @@ app.innerHTML = `
             </div>
           </div>
         </div>
-
-        <!-- 右侧：说明与保存操作 -->
-        <div class="visual-sidebar">
-          <div class="v-tip">
-            💡 <strong>即时生效 & 同步滚动</strong>：在此调整任何一项，底层的排版预览会<strong>毫秒级实时刷新</strong>；左侧写作与右侧排版支持<strong>平滑双向同步滚动</strong>。
-          </div>
-          <div class="field-col" style="margin-top:16px;">
-            <label class="ctl" style="flex-direction:column;align-items:flex-start;gap:6px;">
-              <span>保存主题名称</span>
-              <input id="vThemeSaveName" type="text" placeholder="例如：我的优雅绿" style="width:100%;">
-            </label>
-            <div class="btn-row" style="margin-top:8px;">
-              <button id="vThemeSaveBtn" class="btn primary" style="width:100%;">💾 保存为自定义主题</button>
-            </div>
-            <div class="btn-row" style="margin-top:8px;">
-              <button id="vThemeResetBtn" class="btn ghost" style="width:100%;">重置为预设</button>
-            </div>
-          </div>
-        </div>
-
       </div>
-    </div>
 
     <!-- 专家代码 (JSON) 面板 -->
-    <div id="codeTabPanel" class="modal-body theme-edit-body hidden">
+    <div id="codeTabPanel" class="drawer-body theme-edit-body hidden">
       <div class="theme-edit-left">
         <div class="field-row">
           <label class="ctl">选择主题
@@ -359,6 +333,14 @@ app.innerHTML = `
       </div>
     </div>
 
+    <div id="drawerFooter" class="drawer-footer">
+      <div class="footer-row">
+        <input id="vThemeSaveName" type="text" placeholder="给新主题起个名字，如：我的暖橙">
+        <button id="vThemeResetBtn" class="btn ghost">还原修改</button>
+        <button id="vThemeSaveBtn" class="btn primary">💾 保存并应用</button>
+      </div>
+      <div class="footer-hint" id="themeDirtyHint">未保存的修改在关闭抽屉时会自动还原</div>
+    </div>
   </div>
 </div>
 
@@ -389,77 +371,68 @@ const fileInput = $<HTMLInputElement>('#fileInput');
 const inputHint = $<HTMLElement>('#inputHint');
 
 let lastResult: Awaited<ReturnType<typeof convert>> | null = null;
+let lastError: string | null = null;
 let activeTab: 'preview' | 'html' = 'preview';
 
 /* ------------------------------------------------------------------ */
-/* 核心：高精度平滑双向同步滚动                                         */
+/* 核心：平滑双向同步滚动（postMessage，预览保持沙箱隔离）              */
 /* ------------------------------------------------------------------ */
 
-let isScrollingFromEditor = false;
-let isScrollingFromPreview = false;
-let scrollLockTimer: number | undefined;
+let lastEditorRatio = 0;
+let previewScrollLockUntil = 0;
+let editorScrollRaf = 0;
 
-function getPreviewScrollElement(): HTMLElement | null {
-  try {
-    const doc = preview.contentDocument;
-    if (!doc) return null;
-    return (doc.scrollingElement as HTMLElement) || doc.documentElement || doc.body;
-  } catch {
-    return null;
-  }
-}
+/** 注入预览 iframe 的滚动代理：沙箱内回传/接收滚动比例 */
+const PREVIEW_SCROLL_SCRIPT = `<script>
+(function () {
+  var lock = false;
+  function scroller() { return document.scrollingElement || document.documentElement || document.body; }
+  window.addEventListener('message', function (ev) {
+    var d = ev.data;
+    if (!d || d.type !== 'md2-scroll-to') return;
+    var el = scroller();
+    var max = el.scrollHeight - el.clientHeight;
+    if (max <= 0) return;
+    lock = true;
+    var ratio = Math.max(0, Math.min(1, Number(d.ratio) || 0));
+    el.scrollTop = ratio * max;
+    setTimeout(function () { lock = false; }, 80);
+  });
+  document.addEventListener('scroll', function () {
+    if (lock) return;
+    var el = scroller();
+    var max = el.scrollHeight - el.clientHeight;
+    if (max <= 0) return;
+    parent.postMessage({ type: 'md2-scroll', ratio: el.scrollTop / max }, '*');
+  }, { passive: true });
+})();
+</script>`;
 
 // 左侧编辑器滚动 -> 同步右侧预览
 editor.addEventListener('scroll', () => {
-  if (isScrollingFromPreview) return;
-  isScrollingFromEditor = true;
-  window.clearTimeout(scrollLockTimer);
-  scrollLockTimer = window.setTimeout(() => {
-    isScrollingFromEditor = false;
-  }, 100);
-
-  const previewEl = getPreviewScrollElement();
-  if (!previewEl) return;
-  const maxEditor = editor.scrollHeight - editor.clientHeight;
-  if (maxEditor <= 0) return;
-  const ratio = editor.scrollTop / maxEditor;
-  const maxPreview = previewEl.scrollHeight - previewEl.clientHeight;
-  if (maxPreview > 0) {
-    previewEl.scrollTop = ratio * maxPreview;
-  }
+  if (Date.now() < previewScrollLockUntil) return;
+  if (editorScrollRaf) return;
+  editorScrollRaf = requestAnimationFrame(() => {
+    editorScrollRaf = 0;
+    const max = editor.scrollHeight - editor.clientHeight;
+    if (max <= 0) return;
+    lastEditorRatio = editor.scrollTop / max;
+    preview.contentWindow?.postMessage({ type: 'md2-scroll-to', ratio: lastEditorRatio }, '*');
+  });
 }, { passive: true });
 
 // 右侧预览滚动 -> 同步左侧编辑器
-function bindPreviewScroll() {
-  try {
-    const win = preview.contentWindow;
-    if (!win) return;
-    win.removeEventListener('scroll', handlePreviewScroll);
-    win.addEventListener('scroll', handlePreviewScroll, { passive: true });
-  } catch { /* 忽略跨域/未加载 */ }
-}
-
-function handlePreviewScroll() {
-  if (isScrollingFromEditor) return;
-  isScrollingFromPreview = true;
-  window.clearTimeout(scrollLockTimer);
-  scrollLockTimer = window.setTimeout(() => {
-    isScrollingFromPreview = false;
-  }, 100);
-
-  const previewEl = getPreviewScrollElement();
-  if (!previewEl) return;
-  const maxPreview = previewEl.scrollHeight - previewEl.clientHeight;
-  if (maxPreview <= 0) return;
-  const ratio = previewEl.scrollTop / maxPreview;
-  const maxEditor = editor.scrollHeight - editor.clientHeight;
-  if (maxEditor > 0) {
-    editor.scrollTop = ratio * maxEditor;
-  }
-}
+window.addEventListener('message', (ev) => {
+  if (ev.source !== preview.contentWindow) return;
+  const d = ev.data as { type?: string; ratio?: number } | null;
+  if (!d || d.type !== 'md2-scroll' || typeof d.ratio !== 'number') return;
+  previewScrollLockUntil = Date.now() + 120;
+  const max = editor.scrollHeight - editor.clientHeight;
+  if (max > 0) editor.scrollTop = d.ratio * max;
+});
 
 preview.addEventListener('load', () => {
-  bindPreviewScroll();
+  preview.contentWindow?.postMessage({ type: 'md2-scroll-to', ratio: lastEditorRatio }, '*');
 });
 
 /* ------------------------------------------------------------------ */
@@ -474,12 +447,6 @@ async function runConvert() {
   if (converting) { pendingConvert = true; return; }
   converting = true;
   try {
-    // 记录重绘前的相对滚动位置
-    const previewElBefore = getPreviewScrollElement();
-    const prevRatio = previewElBefore && (previewElBefore.scrollHeight - previewElBefore.clientHeight > 0)
-      ? previewElBefore.scrollTop / (previewElBefore.scrollHeight - previewElBefore.clientHeight)
-      : 0;
-
     const result = await convert(state.content, {
       inputFormat: state.inputFormat,
       platform: state.platform,
@@ -488,22 +455,13 @@ async function runConvert() {
       zhihuMath: state.zhihuMath,
     });
     lastResult = result;
+    lastError = null;
 
-    // 预览
-    preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>
+    // 预览（保持沙箱隔离；滚动由注入脚本与父页面通过 postMessage 联动）
+    preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8">${PREVIEW_SCROLL_SCRIPT}<style>
       body{margin:0;padding:18px;background:#fff;}
       svg{max-width:100%;}
     </style></head><body>${result.previewHtml}</body></html>`;
-
-    // 恢复滚动位置并重新挂载滚动监听
-    preview.onload = () => {
-      bindPreviewScroll();
-      const previewElAfter = getPreviewScrollElement();
-      if (previewElAfter && prevRatio > 0) {
-        const max = previewElAfter.scrollHeight - previewElAfter.clientHeight;
-        if (max > 0) previewElAfter.scrollTop = prevRatio * max;
-      }
-    };
 
     htmlView.textContent = state.platform === 'zhihu' && state.zhihuPaste === 'plain'
       ? result.plainText
@@ -511,6 +469,7 @@ async function runConvert() {
 
     // 状态栏
     statsEl.textContent = `${result.stats.chars} 字 · ${result.stats.mathCount} 个公式`;
+    statsEl.classList.remove('status-error');
     if (result.warnings.length) {
       warnBtn.textContent = `⚠ ${result.warnings.length} 条警告`;
       warnBtn.classList.remove('hidden');
@@ -521,6 +480,13 @@ async function runConvert() {
     inputHint.textContent = state.inputFormat === 'latex'
       ? 'LaTeX 子集：公式用 $…$ 或 equation/align/gather 环境'
       : 'Markdown';
+  } catch (e) {
+    console.error(e);
+    lastError = e instanceof Error ? e.message : String(e);
+    statsEl.textContent = '转换失败：' + lastError;
+    statsEl.classList.add('status-error');
+    warnBtn.textContent = '⚠ 转换出错';
+    warnBtn.classList.remove('hidden');
   } finally {
     converting = false;
     if (pendingConvert) { pendingConvert = false; runConvert(); }
@@ -537,14 +503,8 @@ function scheduleConvert() {
 /* ------------------------------------------------------------------ */
 
 function refreshThemeOptions() {
-  themeSel.innerHTML = '';
-  for (const t of allThemes()) {
-    const opt = document.createElement('option');
-    opt.value = t.name;
-    opt.textContent = t.builtin ? t.name : t.name + '（自定义）';
-    themeSel.appendChild(opt);
-  }
-  themeSel.value = state.themeName in state.customThemes || BUILTIN_THEMES.some((t) => t.name === state.themeName)
+  fillThemeSelect(themeSel);
+  themeSel.value = allThemes().some((t) => t.name === state.themeName)
     ? state.themeName
     : DEFAULT_THEME_NAME;
 }
@@ -680,7 +640,13 @@ moreMenu.addEventListener('click', async (e) => {
     download(lastResult.exportHtml, 'article.html', 'text/html');
   }
   if (act === 'loadSample') { editor.value = SAMPLE_DOC; state.content = SAMPLE_DOC; saveState(); runConvert(); }
-  if (act === 'clear') { editor.value = ''; state.content = ''; saveState(); runConvert(); }
+  if (act === 'clear') {
+    if (!window.confirm('确定要清空当前内容吗？此操作不可撤销。')) return;
+    editor.value = '';
+    state.content = '';
+    saveState();
+    runConvert();
+  }
 });
 
 fileInput.addEventListener('change', async () => {
@@ -712,7 +678,11 @@ function download(content: string, name: string, mime: string) {
 warnBtn.addEventListener('click', () => {
   const list = $('#warnList');
   list.innerHTML = '';
-  for (const w of lastResult?.warnings || []) {
+  const items = [
+    ...(lastError ? ['转换失败：' + lastError] : []),
+    ...(lastResult?.warnings || []),
+  ];
+  for (const w of items) {
     const li = document.createElement('li');
     li.textContent = w;
     list.appendChild(li);
@@ -728,20 +698,48 @@ $('#warnCloseBtn').addEventListener('click', () => $('#warnModal').classList.add
 const themeModal = $('#themeModal');
 const visualTabPanel = $('#visualTabPanel');
 const codeTabPanel = $('#codeTabPanel');
+const drawerFooter = $('#drawerFooter');
 const themeJson = $<HTMLTextAreaElement>('#themeJson');
 const themeBaseSel = $<HTMLSelectElement>('#themeEditBase');
-const vBasePreset = $<HTMLSelectElement>('#vBasePreset');
+const galleryBox = $('#themeGallery');
+const dirtyHint = $('#themeDirtyHint');
 
 // 可视化临时状态
 let curVisualConfig: ThemeVisualConfig = extractVisualConfig(currentTheme());
+let themeOriginalName = state.themeName;
+let drawerSelectedName = state.themeName;
+let themeDirty = false;
 
-// 弹窗 Tab 切换
+/** 按「mdnice 官方 / 学术经典 / 我的自定义」分组填充主题下拉框 */
+function fillThemeSelect(sel: HTMLSelectElement) {
+  sel.innerHTML = '';
+  const groups: Array<[string, Theme[]]> = [
+    ['mdnice 官方爆款', BUILTIN_THEMES.filter((t) => t.category === 'mdnice')],
+    ['学术 · 极简 · 经典', BUILTIN_THEMES.filter((t) => t.category !== 'mdnice')],
+    ['我的自定义主题', Object.values(state.customThemes)],
+  ];
+  for (const [label, items] of groups) {
+    if (!items.length) continue;
+    const og = document.createElement('optgroup');
+    og.label = label;
+    for (const t of items) {
+      const opt = document.createElement('option');
+      opt.value = t.name;
+      opt.textContent = t.name;
+      og.appendChild(opt);
+    }
+    sel.appendChild(og);
+  }
+}
+
+// 抽屉 Tab 切换
 for (const tabBtn of app.querySelectorAll<HTMLButtonElement>('.modal-tab')) {
   tabBtn.addEventListener('click', () => {
     const tabName = tabBtn.dataset.modaltab;
     for (const b of app.querySelectorAll('.modal-tab')) b.classList.toggle('active', b === tabBtn);
     visualTabPanel.classList.toggle('hidden', tabName !== 'visual');
     codeTabPanel.classList.toggle('hidden', tabName !== 'code');
+    drawerFooter.classList.toggle('hidden', tabName === 'code');
     if (tabName === 'code') {
       themeJson.value = JSON.stringify(currentTheme(), null, 2);
     }
@@ -781,43 +779,106 @@ function syncVisualUIFromConfig(cfg: ThemeVisualConfig) {
   $<HTMLSelectElement>('#vCodeTheme').value = cfg.codeTheme;
 }
 
+function markDirty(dirty: boolean) {
+  themeDirty = dirty;
+  dirtyHint.textContent = dirty
+    ? '● 有未保存的修改，关闭抽屉将自动还原'
+    : '未保存的修改在关闭抽屉时会自动还原';
+  dirtyHint.classList.toggle('dirty', dirty);
+}
+
+function updateGalleryActive() {
+  for (const card of galleryBox.querySelectorAll<HTMLElement>('.gallery-card')) {
+    card.classList.toggle('active', card.dataset.theme === drawerSelectedName);
+  }
+}
+
+const GALLERY_SAMPLE = `<h2>标题排版</h2><p>正文示例，<strong>重点强调</strong>与<a>链接</a>。</p><blockquote><p>引用一句名言。</p></blockquote><pre><code>const x = 1;</code></pre><table><thead><tr><th>列</th><th>值</th></tr></thead><tbody><tr><td>甲</td><td>1</td></tr></tbody></table>`;
+
+function buildGallery() {
+  galleryBox.innerHTML = '';
+  for (const t of allThemes()) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'gallery-card';
+    card.dataset.theme = t.name;
+    const thumb = document.createElement('div');
+    thumb.className = 'gallery-thumb';
+    const inner = document.createElement('div');
+    inner.className = 'gallery-thumb-inner';
+    inner.setAttribute('style', t.styles['root'] || '');
+    const tpl = document.createElement('template');
+    tpl.innerHTML = GALLERY_SAMPLE;
+    applyThemeStyles(tpl.content, t);
+    inner.append(...Array.from(tpl.content.childNodes));
+    thumb.appendChild(inner);
+    const name = document.createElement('div');
+    name.className = 'gallery-name';
+    name.textContent = t.name;
+    card.append(thumb, name);
+    galleryBox.appendChild(card);
+  }
+  updateGalleryActive();
+}
+
 /** 用户在可视化界面改动任意一项时调用：更新 override 并即刻重绘 */
 function applyVisualChange() {
   const theme = buildThemeFromVisualConfig('临时自定义', curVisualConfig);
   activeThemeOverride = theme;
   themeJson.value = JSON.stringify(theme, null, 2);
+  markDirty(true);
+  updateGalleryActive();
   runConvert();
 }
 
 function openThemeModal() {
-  vBasePreset.innerHTML = '';
-  themeBaseSel.innerHTML = '';
-  for (const t of allThemes()) {
-    const opt = document.createElement('option');
-    opt.value = t.name;
-    opt.textContent = t.builtin ? t.name : t.name + '（自定义）';
-    vBasePreset.appendChild(opt.cloneNode(true));
-    themeBaseSel.appendChild(opt);
-  }
-  vBasePreset.value = state.themeName;
-  themeBaseSel.value = state.themeName;
-
+  themeOriginalName = state.themeName;
+  drawerSelectedName = state.themeName;
   curVisualConfig = extractVisualConfig(currentTheme());
   syncVisualUIFromConfig(curVisualConfig);
+  fillThemeSelect(themeBaseSel);
+  themeBaseSel.value = state.themeName;
   themeJson.value = JSON.stringify(currentTheme(), null, 2);
+  buildGallery();
+  markDirty(false);
   themeModal.classList.remove('hidden');
 }
 
-$('#themeEditBtn').addEventListener('click', openThemeModal);
-$('#themeCloseBtn').addEventListener('click', () => themeModal.classList.add('hidden'));
+/** 关闭抽屉：丢弃未保存的临时主题，恢复已保存主题 */
+function closeThemeDrawer() {
+  if (themeModal.classList.contains('hidden')) return;
+  themeModal.classList.add('hidden');
+  if (activeThemeOverride) {
+    activeThemeOverride = null;
+    runConvert();
+  }
+}
 
-// 切换基准主题
-vBasePreset.addEventListener('change', () => {
-  const t = allThemes().find((x) => x.name === vBasePreset.value);
+$('#themeEditBtn').addEventListener('click', openThemeModal);
+$('#themeCloseBtn').addEventListener('click', closeThemeDrawer);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeThemeDrawer();
+});
+
+// 主题画廊：点击卡片即时套用
+galleryBox.addEventListener('click', (e) => {
+  const card = (e.target as HTMLElement).closest<HTMLElement>('.gallery-card');
+  const name = card?.dataset.theme;
+  if (!name) return;
+  const t = allThemes().find((x) => x.name === name);
   if (!t) return;
+  drawerSelectedName = name;
   curVisualConfig = extractVisualConfig(t);
   syncVisualUIFromConfig(curVisualConfig);
+  markDirty(true);
+  updateGalleryActive();
   applyVisualChange();
+});
+
+// 画廊收起 / 展开
+$('#galleryToggle').addEventListener('click', () => {
+  const collapsed = galleryBox.classList.toggle('collapsed');
+  $('#galleryToggle').textContent = collapsed ? '展开' : '收起';
 });
 
 // 调色盘点击
@@ -908,18 +969,24 @@ $('#vThemeSaveBtn').addEventListener('click', () => {
   activeThemeOverride = null;
   saveState();
   syncControls();
+  markDirty(false);
+  themeModal.classList.add('hidden');
   runConvert();
-  flash($('#vThemeSaveBtn'), '已保存并启用 ✓');
+  flash($('#themeEditBtn'), '已保存并应用 ✓');
   nameInput.value = '';
 });
 
-// 重置为预设
+// 还原到打开抽屉时的主题（丢弃未保存修改）
 $('#vThemeResetBtn').addEventListener('click', () => {
-  const t = BUILTIN_THEMES[0]!;
+  const t = allThemes().find((x) => x.name === themeOriginalName) || BUILTIN_THEMES[0]!;
+  drawerSelectedName = t.name;
   curVisualConfig = extractVisualConfig(t);
   syncVisualUIFromConfig(curVisualConfig);
-  applyVisualChange();
-  flash($('#vThemeResetBtn'), '已重置为默认 ✓');
+  activeThemeOverride = null;
+  markDirty(false);
+  updateGalleryActive();
+  runConvert();
+  flash($('#vThemeResetBtn'), '已还原 ✓');
 });
 
 /* ------------------------------------------------------------------ */
@@ -937,6 +1004,7 @@ $('#themePreviewApplyBtn').addEventListener('click', () => {
     const err = validateTheme(json);
     if (err) { flash($('#themePreviewApplyBtn'), 'JSON 有误：' + err); return; }
     activeThemeOverride = json;
+    markDirty(true);
     runConvert();
     flash($('#themePreviewApplyBtn'), '已临时预览 ✓');
   } catch {
@@ -957,8 +1025,9 @@ $('#themeSaveBtn').addEventListener('click', () => {
     activeThemeOverride = null;
     saveState();
     syncControls();
+    themeModal.classList.add('hidden');
     runConvert();
-    flash($('#themeSaveBtn'), '已保存并启用 ✓');
+    flash($('#themeEditBtn'), '已保存并应用 ✓');
     nameInput.value = '';
   } catch {
     flash($('#themeSaveBtn'), 'JSON 解析失败');

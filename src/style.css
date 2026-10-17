@@ -680,3 +680,173 @@ body.phone-width .preview-frame {
   color: #6a4b00;
   line-height: 1.9;
 }
+
+/* ---------- 主题抽屉（编辑主题时右侧预览始终可见） ---------- */
+
+.theme-drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.drawer-card {
+  pointer-events: auto;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: min(480px, 94vw);
+  background: #fff;
+  border-right: 1px solid var(--border);
+  box-shadow: 10px 0 32px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer-head { flex-shrink: 0; }
+
+.drawer-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 18px;
+  min-height: 0;
+}
+
+.drawer-footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+  background: #fafbfc;
+}
+
+.footer-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.footer-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.footer-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.footer-hint.dirty { color: #9a6700; }
+
+/* ---------- 主题画廊 ---------- */
+
+.gallery-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.vgroup-sub {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 4px;
+}
+
+.link-btn {
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.theme-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  max-height: 300px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f6f8fa;
+  margin-bottom: 18px;
+}
+
+.theme-gallery.collapsed { display: none; }
+
+.gallery-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.gallery-card:hover { border-color: #b9c6da; }
+
+.gallery-card.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(74, 125, 217, 0.22);
+}
+
+.gallery-thumb {
+  height: 132px;
+  overflow: hidden;
+  background: #fff;
+  padding: 6px;
+}
+
+.gallery-thumb-inner {
+  transform: scale(0.58);
+  transform-origin: top left;
+  width: 172%;
+  pointer-events: none;
+}
+
+.gallery-name {
+  font-size: 11px;
+  color: #4a5568;
+  padding: 5px 7px;
+  border-top: 1px solid #eef1f4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 抽屉内的专家代码模式改为单列 */
+
+.drawer-card .theme-edit-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.drawer-card .theme-edit-body textarea {
+  height: 300px;
+}
+
+.drawer-card .theme-edit-body .theme-edit-left,
+.drawer-card .theme-edit-body .theme-edit-right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.status-error { color: var(--danger); }
+
+/* 抽屉内的网格防溢出 */
+.theme-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.gallery-card { min-width: 0; }
+.gallery-thumb { min-width: 0; }
+.form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.vlabel select { min-width: 0; max-width: 100%; }
+.visual-controls { min-width: 0; }

@@ -13,6 +13,8 @@ export interface Theme {
   /** highlight.js token → 颜色（用于 pre 代码块） */
   hljs: Record<string, string>;
   builtin?: boolean;
+  /** 主题分组：mdnice 官方爆款 / 经典学术 */
+  category?: 'mdnice' | 'classic';
   /** 如果由可视化配置生成，保存其配置快照便于二次可视化调节 */
   visualConfig?: ThemeVisualConfig;
 }
@@ -650,7 +652,11 @@ export const BUILTIN_THEMES: Theme[] = [
     strongStyle: 'color',
     codeTheme: 'one-dark',
   }),
-].map((t) => ({ ...t, builtin: true }));
+].map((t) => ({
+  ...t,
+  builtin: true,
+  category: t.name.includes('mdnice官方') ? ('mdnice' as const) : ('classic' as const),
+}));
 
 /** 把主题样式套到 DOM 片段上：逐选择器 querySelectorAll，后应用的选择器覆盖先应用的。 */
 export function applyThemeStyles(frag: DocumentFragment | HTMLElement, theme: Theme): string[] {

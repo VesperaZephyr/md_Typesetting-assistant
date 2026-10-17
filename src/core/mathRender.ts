@@ -33,8 +33,21 @@ export class MathRenderError extends Error {
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
 
+/* 全局缓存：同一公式（含宏前缀）渲染一次后复用，主题切换/重复转换不再重算 */
+const SVG_CACHE = new Map<string, string>();
+const PNG_CACHE = new Map<string, { dataUrl: string; width: number; height: number; vAlign: number }>();
+const SVG_CACHE_LIMIT = 500;
+const PNG_CACHE_LIMIT = 200;
+
+function cacheKey(tex: string, display: boolean, preamble: string): string {
+  return (display ? 'D' : 'I') + '|' + preamble + '|' + tex;
+}
+
 /** 渲染单个公式为自包含 <svg> 字符串（MathJax 原生 ex 单位）。 */
 export function renderTexToSvg(tex: string, display: boolean, mathPreamble = ''): string {
+  const key = cacheKey(tex, display, mathPreamble);
+  const cached = SVG_CACHE.get(key);
+  if (cached) return cached;
   initMathJax();
   const source = mathPreamble ? mathPreamble + '\n' + tex : tex;
   let node: HTMLElement | null = null;
@@ -57,7 +70,10 @@ export function renderTexToSvg(tex: string, display: boolean, mathPreamble = '')
     el.removeAttribute('data-c');
     el.removeAttribute('data-mjx-error');
   }
-  return new XMLSerializer().serializeToString(out);
+  const result = new XMLSerializer().serializeToString(out);
+  if (SVG_CACHE.size >= SVG_CACHE_LIMIT) SVG_CACHE.clear();
+  SVG_CACHE.set(key, result);
+  return result;
 }
 
 const EX_PX = 8; // MathJax 默认度量：1ex = 0.5em，16px 字号下 1ex = 8px
@@ -98,4 +114,20 @@ export async function svgToPng(svg: string, scale = 2): Promise<{ dataUrl: strin
   ctx.scale(scale, scale);
   ctx.drawImage(img, 0, 0, width, height);
   return { dataUrl: canvas.toDataURL('image/png'), width, height, vAlign };
+}
+
+/** 公式 → PNG（带缓存，重复导出/切主题不必重新光栅化）。 */
+export async function renderTexToPng(
+  tex: string,
+  display: boolean,
+  mathPreamble = '',
+): Promise<{ dataUrl: string; width: number; height: number; vAlign: number }> {
+  const key = cacheKey(tex, display, mathPreamble);
+  const cached = PNG_CACHE.get(key);
+  if (cached) return cached;
+  const svg = renderTexToSvg(tex, display, mathPreamble);
+  const png = await svgToPng(svg);
+  if (PNG_CACHE.size >= PNG_CACHE_LIMIT) PNG_CACHE.clear();
+  PNG_CACHE.set(key, png);
+  return png;
 }
