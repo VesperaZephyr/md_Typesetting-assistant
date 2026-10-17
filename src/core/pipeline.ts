@@ -6,7 +6,7 @@
 import { md } from './markdown';
 import { extractMath, restoreMath, type MathSeg } from './mathExtract';
 import { latexToMarkdown, expandZeroArgMacros } from './latex';
-import { renderTexToSvg, renderTexToPng, MathRenderError } from './mathRender';
+import { renderTexToSvg, renderTexToPng, svgExToPx, MathRenderError } from './mathRender';
 import { applyThemeStyles, type Theme } from './themes';
 import {
   inlineHljsColors, stripClasses, stripStyles,
@@ -15,7 +15,7 @@ import {
 
 export type Platform = 'wechat' | 'zhihu';
 export type InputFormat = 'markdown' | 'latex';
-export type WechatMath = 'svg' | 'png';
+export type WechatMath = 'svg' | 'svg-px' | 'png';
 
 export interface ConvertOptions {
   inputFormat: InputFormat;
@@ -23,6 +23,10 @@ export interface ConvertOptions {
   theme: Theme;
   wechatMath: WechatMath;
   zhihuMath: ZhihuMathMode;
+  /** 公众号：把外部链接转成文末「参考链接」（公众号正文不允许外链） */
+  wechatLinkFootnotes?: boolean;
+  /** 知乎：把正文里的 h1 降级为 h2（文章标题通常填在知乎标题栏） */
+  zhihuDemoteH1?: boolean;
 }
 
 export interface ConvertResult {
@@ -36,9 +40,10 @@ export interface ConvertResult {
   stats: { chars: number; mathCount: number };
 }
 
-function renderSegSvg(seg: MathSeg, preamble: string): string {
+function renderSegSvg(seg: MathSeg, preamble: string, unit: 'ex' | 'px' = 'ex'): string {
   try {
-    const svg = renderTexToSvg(seg.tex, seg.display, preamble);
+    let svg = renderTexToSvg(seg.tex, seg.display, preamble);
+    if (unit === 'px') svg = svgExToPx(svg).svg;
     if (seg.display) {
       return `<section style="text-align:center;margin:1.2em 0;overflow-x:auto;">${svg}</section>`;
     }
@@ -71,6 +76,64 @@ function mathErrorFallback(seg: MathSeg, mode: 'wechat' | 'zhihu-text'): string 
   return `<span style="color:#e05555;">[公式错误：${seg.tex.replace(/</g, '&lt;')}]</span>`;
 }
 
+/** 公众号：外部链接转文末「参考链接」；mp.weixin.qq.com 内部链接保持可点击。 */
+function applyLinkFootnotes(root: DocumentFragment | HTMLElement, warnings: string[]): void {
+  const anchors = Array.from(root.querySelectorAll('a[href]'));
+  if (!anchors.length) return;
+  const entries: Array<{ url: string; num: number }> = [];
+  const seen = new Map<string, number>();
+  for (const a of anchors) {
+    const href = (a.getAttribute('href') || '').trim();
+    if (!href || href.startsWith('#') || /^https?:\/\/mp\.weixin\.qq\.com\//i.test(href)) continue;
+    let num = seen.get(href);
+    if (!num) {
+      num = entries.length + 1;
+      seen.set(href, num);
+      entries.push({ url: href, num });
+    }
+    const marker = document.createElement('span');
+    marker.setAttribute('style', 'font-size:80%;color:#888888;');
+    marker.textContent = `[${num}]`;
+    a.replaceWith(...Array.from(a.childNodes), marker);
+  }
+  if (!entries.length) return;
+  warnings.push(`已将 ${entries.length} 个外部链接转为文末参考链接（公众号正文不支持外链）。`);
+
+  const sec = document.createElement('section');
+  sec.setAttribute('style', 'margin-top:2.2em;padding-top:1em;border-top:1px solid #e5e7eb;font-size:13px;color:#666666;line-height:1.7;');
+  const title = document.createElement('p');
+  title.setAttribute('style', 'margin:0 0 0.5em;font-weight:bold;color:#333333;');
+  title.textContent = '参考链接';
+  sec.appendChild(title);
+  for (const e of entries) {
+    const p = document.createElement('p');
+    p.setAttribute('style', 'margin:0.25em 0;word-break:break-all;');
+    p.textContent = `[${e.num}] ${e.url}`;
+    sec.appendChild(p);
+  }
+  root.appendChild(sec);
+}
+
+/** 知乎：正文 h1 降级为 h2（标题通常填在知乎单独的标题栏）。 */
+function demoteH1ToH2(root: DocumentFragment | HTMLElement): void {
+  for (const h1 of Array.from(root.querySelectorAll('h1'))) {
+    const h2 = document.createElement('h2');
+    for (const attr of Array.from(h1.attributes)) h2.setAttribute(attr.name, attr.value);
+    h2.append(...Array.from(h1.childNodes));
+    h1.replaceWith(h2);
+  }
+}
+
+/** 提示本地相对路径图片（公众号/知乎无法读取） */
+function warnLocalImages(html: string, warnings: string[]): void {
+  const srcs = Array.from(html.matchAll(/<img[^>]+src="([^"]+)"/g)).map((m) => m[1]!);
+  const local = [...new Set(srcs.filter((s) => !/^(https?:|data:|blob:)/i.test(s)))];
+  if (local.length) {
+    const sample = local.slice(0, 3).join('、');
+    warnings.push(`检测到 ${local.length} 个本地路径图片（${sample}）：公众号/知乎无法读取，请先上传图床后替换。`);
+  }
+}
+
 /** 把骨架里的占位符替换成平台公式标记 */
 async function substitute(
   skeletonHtml: string,
@@ -90,7 +153,9 @@ async function substitute(
       if (opts.platform === 'wechat') {
         markup = opts.wechatMath === 'svg'
           ? renderSegSvg(seg, preamble)
-          : await renderSegPng(seg, preamble);
+          : opts.wechatMath === 'svg-px'
+            ? renderSegSvg(seg, preamble, 'px')
+            : await renderSegPng(seg, preamble);
       } else if (opts.zhihuMath === 'eeimg') {
         markup = zhihuEquationImg(seg.tex, seg.display);
       } else {
@@ -151,6 +216,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   }
 
   const baseHtml = md.render(skeleton);
+  warnLocalImages(baseHtml, warnings);
 
   /* ---- 视觉预览：主题 + SVG 公式，与平台无关 ---- */
   const previewTpl = document.createElement('template');
@@ -159,6 +225,9 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   const themeWarnings = applyThemeStyles(previewTpl.content, opts.theme);
   warnings.push(...themeWarnings);
   stripClasses(previewTpl.content);
+  if (opts.platform === 'wechat' && opts.wechatLinkFootnotes) {
+    applyLinkFootnotes(previewTpl.content, warnings);
+  }
   const previewWrap = document.createElement('section');
   previewWrap.setAttribute('style', opts.theme.styles['root'] || '');
   previewWrap.append(...Array.from(previewTpl.content.childNodes));
@@ -178,6 +247,9 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
     inlineHljsColors(tpl.content, opts.theme);
     applyThemeStyles(tpl.content, opts.theme);
     stripClasses(tpl.content);
+    if (opts.wechatLinkFootnotes) {
+      applyLinkFootnotes(tpl.content, warnings);
+    }
     const wrap = document.createElement('section');
     wrap.setAttribute('style', opts.theme.styles['root'] || '');
     wrap.append(...Array.from(tpl.content.childNodes));
@@ -190,6 +262,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
     stripClasses(tpl.content, {
       keepClass: (el, cls) => cls === 'content_image' && el.tagName === 'IMG',
     });
+    if (opts.zhihuDemoteH1) demoteH1ToH2(tpl.content);
     // 知乎公式不经过 MathJax，宏需要文本展开
     const expandedSegs = segs.map((seg) => {
       if (!mathMacros.length) return seg;

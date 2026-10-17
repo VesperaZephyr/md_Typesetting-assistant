@@ -20,6 +20,9 @@ interface AppState {
   wechatMath: WechatMath;
   zhihuMath: 'eeimg' | 'dollar';
   zhihuPaste: 'rich' | 'plain';
+  wechatLinkFootnotes: boolean;
+  zhihuDemoteH1: boolean;
+  livePreview: boolean;
   themeName: string;
   customThemes: Record<string, Theme>;
   phoneWidth: boolean;
@@ -35,6 +38,9 @@ function loadState(): AppState {
     wechatMath: 'svg',
     zhihuMath: 'eeimg',
     zhihuPaste: 'rich',
+    wechatLinkFootnotes: true,
+    zhihuDemoteH1: true,
+    livePreview: true,
     themeName: DEFAULT_THEME_NAME,
     customThemes: {},
     phoneWidth: false,
@@ -96,6 +102,7 @@ app.innerHTML = `
     <label class="ctl" id="wechatMathCtl">公式
       <select id="wechatMath">
         <option value="svg">SVG 矢量（推荐）</option>
+        <option value="svg-px">SVG 固定像素（兼容旧内核）</option>
         <option value="png">PNG 位图</option>
       </select>
     </label>
@@ -139,7 +146,19 @@ app.innerHTML = `
         <button class="tab active" data-tab="preview">预览</button>
         <button class="tab" data-tab="html">HTML 源码</button>
       </div>
-      <label class="phone-toggle"><input type="checkbox" id="phoneWidth"> 手机宽度</label>
+      <div class="preview-opts">
+        <label class="pane-check" title="关闭后仅在点击「刷新」时更新预览，适合超长文档">
+          <input type="checkbox" id="livePreview"> 实时
+        </label>
+        <button id="refreshBtn" class="pane-btn" title="立即刷新预览（Ctrl+Enter）">刷新</button>
+        <label class="pane-check" id="wechatLinkWrap" title="公众号正文不支持外部链接，勾选后转为文末参考链接">
+          <input type="checkbox" id="wechatLinkFootnotes"> 外链转引用
+        </label>
+        <label class="pane-check" id="zhihuH1Wrap" title="知乎文章标题单独填写，勾选后正文 H1 降为 H2">
+          <input type="checkbox" id="zhihuDemoteH1"> H1→H2
+        </label>
+        <label class="phone-toggle"><input type="checkbox" id="phoneWidth"> 手机宽度</label>
+      </div>
     </div>
     <div class="pane-body">
       <iframe id="preview" class="preview-frame" sandbox="allow-scripts"></iframe>
@@ -453,9 +472,12 @@ async function runConvert() {
       theme: currentTheme(),
       wechatMath: state.wechatMath,
       zhihuMath: state.zhihuMath,
+      wechatLinkFootnotes: state.wechatLinkFootnotes,
+      zhihuDemoteH1: state.zhihuDemoteH1,
     });
     lastResult = result;
     lastError = null;
+    $<HTMLButtonElement>('#refreshBtn').classList.remove('stale');
 
     // 预览（保持沙箱隔离；滚动由注入脚本与父页面通过 postMessage 联动）
     preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8">${PREVIEW_SCROLL_SCRIPT}<style>
@@ -495,7 +517,11 @@ async function runConvert() {
 
 function scheduleConvert() {
   window.clearTimeout(convertTimer);
-  convertTimer = window.setTimeout(runConvert, 280);
+  // 自适应防抖：超长文档/公式很多时降低频率，避免输入卡顿
+  const len = state.content.length;
+  const mathCount = lastResult?.stats.mathCount ?? 0;
+  const delay = len > 20000 ? 900 : mathCount > 60 ? 800 : len > 8000 ? 500 : 280;
+  convertTimer = window.setTimeout(runConvert, delay);
 }
 
 /* ------------------------------------------------------------------ */
@@ -524,6 +550,11 @@ function syncControls() {
   $('#wechatMathCtl').style.display = isWechat ? '' : 'none';
   $('#zhihuMathCtl').style.display = isWechat ? 'none' : '';
   $('#zhihuPasteCtl').style.display = isWechat ? 'none' : '';
+  $('#wechatLinkWrap').style.display = isWechat ? '' : 'none';
+  $('#zhihuH1Wrap').style.display = isWechat ? 'none' : '';
+  $<HTMLInputElement>('#wechatLinkFootnotes').checked = state.wechatLinkFootnotes;
+  $<HTMLInputElement>('#zhihuDemoteH1').checked = state.zhihuDemoteH1;
+  $<HTMLInputElement>('#livePreview').checked = state.livePreview;
   copyBtn.textContent = isWechat ? '复制到公众号' : '复制到知乎';
   $<HTMLInputElement>('#phoneWidth').checked = state.phoneWidth;
   document.body.classList.toggle('phone-width', state.phoneWidth);
@@ -536,7 +567,11 @@ function syncControls() {
 editor.addEventListener('input', () => {
   state.content = editor.value;
   saveState();
-  scheduleConvert();
+  if (state.livePreview) {
+    scheduleConvert();
+  } else {
+    $<HTMLButtonElement>('#refreshBtn').classList.add('stale');
+  }
 });
 
 $<HTMLSelectElement>('#format').addEventListener('change', (e) => {
@@ -558,6 +593,16 @@ themeSel.addEventListener('change', () => {
   state.themeName = themeSel.value;
   activeThemeOverride = null;
   saveState();
+  // 抽屉打开时从顶栏切主题，抽屉内的控件与画廊状态需要同步
+  if (!themeModal.classList.contains('hidden')) {
+    themeOriginalName = state.themeName;
+    drawerSelectedName = state.themeName;
+    curVisualConfig = extractVisualConfig(currentTheme());
+    syncVisualUIFromConfig(curVisualConfig);
+    markDirty(false);
+    updateGalleryActive();
+    themeJson.value = JSON.stringify(currentTheme(), null, 2);
+  }
   runConvert();
 });
 
@@ -583,6 +628,26 @@ $<HTMLInputElement>('#phoneWidth').addEventListener('change', (e) => {
   state.phoneWidth = (e.target as HTMLInputElement).checked;
   saveState();
   syncControls();
+});
+
+$<HTMLInputElement>('#livePreview').addEventListener('change', (e) => {
+  state.livePreview = (e.target as HTMLInputElement).checked;
+  saveState();
+  if (state.livePreview) runConvert();
+});
+
+$('#refreshBtn').addEventListener('click', () => runConvert());
+
+$<HTMLInputElement>('#wechatLinkFootnotes').addEventListener('change', (e) => {
+  state.wechatLinkFootnotes = (e.target as HTMLInputElement).checked;
+  saveState();
+  runConvert();
+});
+
+$<HTMLInputElement>('#zhihuDemoteH1').addEventListener('change', (e) => {
+  state.zhihuDemoteH1 = (e.target as HTMLInputElement).checked;
+  saveState();
+  runConvert();
 });
 
 copyBtn.addEventListener('click', async () => {
@@ -649,19 +714,49 @@ moreMenu.addEventListener('click', async (e) => {
   }
 });
 
-fileInput.addEventListener('change', async () => {
-  const file = fileInput.files?.[0];
-  if (!file) return;
+async function loadFile(file: File) {
   const text = await file.text();
   editor.value = text;
   state.content = text;
-  if (file.name.endsWith('.tex')) {
-    state.inputFormat = 'latex';
-    syncControls();
-  }
+  state.inputFormat = file.name.endsWith('.tex') ? 'latex' : 'markdown';
+  syncControls();
   saveState();
   runConvert();
   fileInput.value = '';
+}
+
+fileInput.addEventListener('change', async () => {
+  const file = fileInput.files?.[0];
+  if (file) await loadFile(file);
+});
+
+/* 拖拽 .md / .tex 到窗口直接打开 */
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', async (e) => {
+  const file = e.dataTransfer?.files?.[0];
+  if (!file) return;
+  e.preventDefault();
+  await loadFile(file);
+});
+
+/* 快捷键：Ctrl+S 保存、Ctrl+Shift+C 复制、Ctrl+O 打开、Ctrl+Enter 刷新 */
+document.addEventListener('keydown', (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (!mod) return;
+  const key = e.key.toLowerCase();
+  if (key === 's') {
+    e.preventDefault();
+    download(state.content, 'article.md', 'text/markdown');
+  } else if (key === 'c' && e.shiftKey) {
+    e.preventDefault();
+    copyBtn.click();
+  } else if (key === 'o') {
+    e.preventDefault();
+    fileInput.click();
+  } else if (key === 'enter') {
+    e.preventDefault();
+    runConvert();
+  }
 });
 
 function download(content: string, name: string, mime: string) {
@@ -715,7 +810,8 @@ function fillThemeSelect(sel: HTMLSelectElement) {
   sel.innerHTML = '';
   const groups: Array<[string, Theme[]]> = [
     ['mdnice 官方爆款', BUILTIN_THEMES.filter((t) => t.category === 'mdnice')],
-    ['学术 · 极简 · 经典', BUILTIN_THEMES.filter((t) => t.category !== 'mdnice')],
+    ['学术 · 极简 · 经典', BUILTIN_THEMES.filter((t) => t.category === 'classic')],
+    ['暗色主题', BUILTIN_THEMES.filter((t) => t.category === 'dark')],
     ['我的自定义主题', Object.values(state.customThemes)],
   ];
   for (const [label, items] of groups) {

@@ -6,8 +6,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "tsx scripts/test-core.ts"
   },
   "dependencies": {
     "highlight.js": "^11.10.0",

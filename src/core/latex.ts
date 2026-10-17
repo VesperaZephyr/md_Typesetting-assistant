@@ -264,11 +264,14 @@ export function latexToMarkdown(src: string): LatexResult {
   /* 6. 环境转换 */
   s = convertTheoremEnvs(s, warnings);
   s = convertLists(s, warnings);
+  s = convertTableEnvs(s);
   s = convertTables(s, warnings);
   s = convertFigures(s, warnings);
   s = convertSimpleEnv(s, 'quote', (body) => quoteLines(body));
   s = convertSimpleEnv(s, 'quotation', (body) => quoteLines(body));
   s = convertSimpleEnv(s, 'abstract', (body) => '> **摘要**\n' + quoteLines(body));
+  s = convertSimpleEnv(s, 'keywords', (body) => '**关键词：** ' + body.replace(/\s+/g, ' ').trim());
+  s = convertSimpleEnv(s, 'keyword', (body) => '**关键词：** ' + body.replace(/\s+/g, ' ').trim());
   s = convertSimpleEnv(s, 'center', (body) => body.trim());
 
   /* 7. 章节标题 */
@@ -458,6 +461,18 @@ function renderList(content: string, kind: string, depth: number, warnings: stri
     items.push('  '.repeat(depth) + prefix + item);
   }
   return items.join('\n');
+}
+
+/** table 浮动环境：取出 caption 作粗体表题，去掉居中/字号等命令，保留内部 tabular。 */
+function convertTableEnvs(s: string): string {
+  const re = /\\begin\{(table\*?)\}(\[[^\]]*\])?([\s\S]*?)\\end\{\1\}/g;
+  return s.replace(re, (_m, _env: string, _opt: string | undefined, body: string) => {
+    let out = body
+      .replace(/\\caption\*?(\[[^\]]*\])?\{([^{}]*)\}/g, (_c, _o, cap: string) => `\n\n**${cap.trim()}**\n\n`)
+      .replace(/\\(?:centering|small|footnotesize|scriptsize|normalsize|vspace\s*\{[^{}]*\}|hspace\s*\{[^{}]*\})/g, '');
+    out = out.replace(/\n{3,}/g, '\n\n');
+    return out;
+  });
 }
 
 /** tabular / tabularx / longtable → markdown 表格 */

@@ -850,3 +850,44 @@ body.phone-width .preview-frame {
 .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .vlabel select { min-width: 0; max-width: 100%; }
 .visual-controls { min-width: 0; }
+
+/* ---------- 预览面板操作项 ---------- */
+
+.preview-opts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.pane-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.pane-btn {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--muted);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.pane-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.pane-btn.stale {
+  border-color: #f0a020;
+  color: #b06d00;
+  background: #fff8e6;
+  box-shadow: 0 0 0 2px rgba(240, 160, 32, 0.18);
+}

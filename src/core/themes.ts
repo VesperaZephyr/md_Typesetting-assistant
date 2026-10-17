@@ -13,8 +13,8 @@ export interface Theme {
   /** highlight.js token → 颜色（用于 pre 代码块） */
   hljs: Record<string, string>;
   builtin?: boolean;
-  /** 主题分组：mdnice 官方爆款 / 经典学术 */
-  category?: 'mdnice' | 'classic';
+  /** 主题分组：mdnice 官方爆款 / 经典学术 / 暗色 */
+  category?: 'mdnice' | 'classic' | 'dark';
   /** 如果由可视化配置生成，保存其配置快照便于二次可视化调节 */
   visualConfig?: ThemeVisualConfig;
 }
@@ -652,10 +652,83 @@ export const BUILTIN_THEMES: Theme[] = [
     strongStyle: 'color',
     codeTheme: 'one-dark',
   }),
+  // 19. Obsidian · 暗夜（深色阅读）
+  {
+    name: 'Obsidian · 暗夜',
+    builtin: true,
+    category: 'dark',
+    styles: {
+      root: 'font-size:15px;color:#d6d6d6;line-height:1.85;background:#1e1e24;padding:22px 18px;border-radius:10px;letter-spacing:0.4px;text-align:justify;word-break:break-word;',
+      p: 'margin:1.25em 0;line-height:1.85;',
+      h1: 'margin:1.6em 0 1em;font-size:22px;font-weight:bold;text-align:center;color:#f0f0f0;',
+      h2: 'margin:1.7em 0 1em;font-size:19px;font-weight:bold;color:#7ee787;border-left:4px solid #2ea043;padding-left:10px;',
+      h3: 'margin:1.4em 0 0.8em;font-size:17px;font-weight:bold;color:#7ee787;',
+      h4: 'margin:1.2em 0 0.6em;font-size:15px;font-weight:bold;color:#e6e6e6;',
+      h5: 'margin:1em 0 0.5em;font-size:15px;color:#c9c9c9;',
+      h6: 'margin:1em 0 0.5em;font-size:14px;color:#a8a8a8;',
+      strong: 'color:#7ee787;font-weight:bold;',
+      em: 'font-style:italic;color:#e0e0e0;',
+      del: 'text-decoration:line-through;color:#8b8b8b;',
+      a: 'color:#58a6ff;text-decoration:none;border-bottom:1px solid #58a6ff;',
+      ul: 'margin:1em 0;padding-left:1.5em;',
+      ol: 'margin:1em 0;padding-left:1.7em;',
+      li: 'margin:0.4em 0;line-height:1.85;',
+      blockquote: 'margin:1.4em 0;padding:12px 16px;color:#b9b9b9;border-left:4px solid #d29922;background:#2a2a32;border-radius:0 6px 6px 0;',
+      'blockquote p': 'margin:0.4em 0;color:#b9b9b9;',
+      code: 'background:#2a2a32;color:#ff7b72;padding:2px 6px;border-radius:4px;font-family:Menlo,Consolas,monospace;font-size:88%;',
+      pre: 'background:#16161a;border:1px solid #30363d;border-radius:7px;padding:14px 16px;overflow-x:auto;margin:1.4em 0;line-height:1.6;',
+      'pre code': 'background:transparent;color:#c9d1d9;padding:0;border-radius:0;font-size:13px;font-family:Menlo,Consolas,monospace;',
+      table: 'border-collapse:collapse;width:100%;margin:1.3em 0;font-size:14px;',
+      th: 'border:1px solid #30363d;background:#22222a;padding:9px 12px;text-align:left;color:#f0f0f0;',
+      td: 'border:1px solid #30363d;padding:8px 12px;',
+      img: 'max-width:100%;border-radius:6px;margin:0 auto;display:block;opacity:0.92;',
+      hr: 'border:none;border-top:1px dashed #3a3a44;margin:2em 0;',
+      figcaption: 'text-align:center;color:#8b8b8b;font-size:12.5px;margin-top:0.5em;',
+      sup: 'font-size:75%;',
+    },
+    hljs: oneDark(),
+  },
+
+  // 20. 黑金 · 夜色（深色高端）
+  {
+    name: '黑金 · 夜色',
+    builtin: true,
+    category: 'dark',
+    styles: {
+      root: 'font-size:15px;color:#e8e0cf;line-height:1.9;background:#14110c;padding:24px 18px;border-radius:10px;letter-spacing:0.5px;text-align:justify;word-break:break-word;',
+      p: 'margin:1.25em 0;line-height:1.9;',
+      h1: 'margin:1.6em 0 1em;font-size:22px;font-weight:bold;text-align:center;color:#f5ecd7;letter-spacing:2px;',
+      h2: 'margin:1.8em 0 1em;font-size:19px;font-weight:bold;color:#d4af37;text-align:center;letter-spacing:1px;',
+      h3: 'margin:1.4em 0 0.8em;font-size:17px;font-weight:bold;color:#d4af37;',
+      h4: 'margin:1.2em 0 0.6em;font-size:15px;font-weight:bold;color:#efe6d2;',
+      h5: 'margin:1em 0 0.5em;font-size:15px;color:#cabfa8;',
+      h6: 'margin:1em 0 0.5em;font-size:14px;color:#a99f8a;',
+      strong: 'color:#d4af37;font-weight:bold;',
+      em: 'font-style:italic;color:#efe6d2;',
+      del: 'text-decoration:line-through;color:#8a8272;',
+      a: 'color:#d4af37;text-decoration:none;border-bottom:1px solid #d4af37;',
+      ul: 'margin:1em 0;padding-left:1.5em;',
+      ol: 'margin:1em 0;padding-left:1.7em;',
+      li: 'margin:0.4em 0;line-height:1.9;',
+      blockquote: 'margin:1.4em 0;padding:12px 16px;color:#cdc3ad;border-left:3px double #d4af37;background:#1d1912;',
+      'blockquote p': 'margin:0.4em 0;color:#cdc3ad;',
+      code: 'background:#241f16;color:#e6c07b;padding:2px 6px;border-radius:4px;font-family:Menlo,Consolas,monospace;font-size:88%;',
+      pre: 'background:#0d0b08;border:1px solid #2e2819;border-radius:7px;padding:14px 16px;overflow-x:auto;margin:1.4em 0;line-height:1.6;',
+      'pre code': 'background:transparent;color:#d8cfba;padding:0;border-radius:0;font-size:13px;font-family:Menlo,Consolas,monospace;',
+      table: 'border-collapse:collapse;width:100%;margin:1.3em 0;font-size:14px;',
+      th: 'border:1px solid #2e2819;background:#1d1912;padding:9px 12px;text-align:left;color:#d4af37;',
+      td: 'border:1px solid #2e2819;padding:8px 12px;',
+      img: 'max-width:100%;border-radius:6px;margin:0 auto;display:block;',
+      hr: 'border:none;border-top:1px solid #2e2819;margin:2em 0;',
+      figcaption: 'text-align:center;color:#8a8272;font-size:12.5px;margin-top:0.5em;',
+      sup: 'font-size:75%;',
+    },
+    hljs: oneDark(),
+  },
 ].map((t) => ({
   ...t,
   builtin: true,
-  category: t.name.includes('mdnice官方') ? ('mdnice' as const) : ('classic' as const),
+  category: (t.category ?? (t.name.includes('mdnice官方') ? 'mdnice' : 'classic')) as Theme['category'],
 }));
 
 /** 把主题样式套到 DOM 片段上：逐选择器 querySelectorAll，后应用的选择器覆盖先应用的。 */
