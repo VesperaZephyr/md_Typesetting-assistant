@@ -221,6 +221,22 @@ select:focus, input[type="text"]:focus { border-color: var(--accent); }
 
 .pane-head-hint { color: #a6abb3; font-size: 12px; }
 
+.article-title {
+  flex: 1;
+  min-width: 0;
+  max-width: 360px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+}
+
+.article-title:hover { border-color: var(--border); }
+.article-title:focus-visible { outline: 2px solid var(--accent); }
+
 .editor-pane textarea {
   flex: 1;
   border: none;
@@ -335,6 +351,56 @@ body.phone-width .preview-frame {
 }
 
 /* ---------- 弹窗通用 ---------- */
+
+.articles-dialog {
+  width: min(520px, calc(100% - 32px));
+  max-height: 85vh;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--panel);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.25);
+}
+
+.articles-dialog::backdrop { background: rgba(20, 24, 30, 0.45); }
+
+.articles-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+#articleDialogStatus { color: var(--danger); }
+
+.article-list { list-style: none; margin: 12px 0 0; padding: 0; }
+
+.article-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--border);
+}
+
+.article-list li > span { color: var(--muted); font-size: 12px; }
+
+.article-open {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.article-open:hover, .article-open[aria-current] { background: #eef3fc; color: var(--accent-dark); }
 
 .modal {
   position: fixed;

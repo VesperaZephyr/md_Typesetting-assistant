@@ -26,9 +26,30 @@ interface AppState {
   themeName: string;
   customThemes: Record<string, Theme>;
   phoneWidth: boolean;
+  activeArticleId: string;
+  articleTitle: string;
+  articles: Article[];
 }
 
+type Article = { id: string; title: string } & Pick<AppState,
+  'content' | 'inputFormat' | 'platform' | 'wechatMath' | 'zhihuMath' | 'zhihuPaste'
+  | 'wechatLinkFootnotes' | 'zhihuDemoteH1' | 'themeName'>;
+
 const LS_KEY = 'md2publish.v1';
+const UNTITLED = '未命名文章';
+let storedState: string | null = null;
+
+function snapshotArticle(current: AppState): Article {
+  const { activeArticleId, articleTitle, content, inputFormat, platform, wechatMath,
+    zhihuMath, zhihuPaste, wechatLinkFootnotes, zhihuDemoteH1, themeName } = current;
+  return { id: activeArticleId, title: articleTitle.trim() || UNTITLED, content, inputFormat,
+    platform, wechatMath, zhihuMath, zhihuPaste, wechatLinkFootnotes, zhihuDemoteH1, themeName };
+}
+
+function articleState(article: Article) {
+  const { id, title, ...settings } = article;
+  return { ...settings, activeArticleId: id, articleTitle: title };
+}
 
 function loadState(): AppState {
   const fallback: AppState = {
@@ -44,23 +65,57 @@ function loadState(): AppState {
     themeName: DEFAULT_THEME_NAME,
     customThemes: {},
     phoneWidth: false,
+    activeArticleId: 'initial',
+    articleTitle: '示例文章',
+    articles: [],
   };
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return fallback;
-    const saved = JSON.parse(raw) as Partial<AppState>;
-    return { ...fallback, ...saved, content: saved.content ?? SAMPLE_DOC };
+    storedState = localStorage.getItem(LS_KEY);
+    if (storedState) {
+      const saved = JSON.parse(storedState) as Partial<AppState>;
+      const restored = { ...fallback, ...saved, content: saved.content ?? SAMPLE_DOC };
+      const active = restored.articles.find((article) => article.id === restored.activeArticleId);
+      if (active) return { ...restored, ...articleState(active) };
+      restored.articleTitle = restored.content === SAMPLE_DOC ? '示例文章' : '原有草稿';
+      restored.articles = [snapshotArticle(restored)];
+      return restored;
+    }
   } catch {
-    return fallback;
+    // 仍可使用编辑器和下载源文件。
   }
+  fallback.articles = [snapshotArticle(fallback)];
+  return fallback;
 }
 
 const state = loadState();
 
-function saveState() {
+function articlesWithCurrent() {
+  const active = snapshotArticle(state);
+  return state.articles.map((article) => article.id === active.id ? active : article);
+}
+
+function persistState(next: AppState): boolean {
   try {
-    localStorage.setItem(LS_KEY, JSON.stringify({ ...state, content: state.content }));
-  } catch { /* 存储满了忽略 */ }
+    // 正文已存在文章记录中，避免为当前稿件重复占用存储空间。
+    const { content: _content, articleTitle: _title, ...saved } = next;
+    const raw = JSON.stringify(saved);
+    if (localStorage.getItem(LS_KEY) !== storedState) {
+      showSaveStatus('另一标签页已更新文章。请先下载当前源文件，再刷新页面。', true);
+      return false;
+    }
+    if (raw !== storedState) localStorage.setItem(LS_KEY, raw);
+    storedState = raw;
+    Object.assign(state, next);
+    showSaveStatus('已保存到此浏览器');
+    return true;
+  } catch {
+    showSaveStatus('保存失败，请下载源文件以保留修改。', true);
+    return false;
+  }
+}
+
+function saveState() {
+  persistState({ ...state, articles: articlesWithCurrent() });
 }
 
 function allThemes(): Theme[] {
@@ -85,6 +140,7 @@ app.innerHTML = `
 <header class="topbar">
   <div class="brand">MD 排版助手 <span class="brand-sub">知乎 & 公众号</span></div>
   <div class="controls">
+    <button id="articlesBtn" class="btn ghost">我的文章</button>
     <label class="ctl">输入
       <select id="format">
         <option value="markdown">Markdown</option>
@@ -123,7 +179,7 @@ app.innerHTML = `
       <button id="moreBtn" class="btn ghost">更多 ▾</button>
       <div id="moreMenu" class="menu hidden">
         <button data-act="open">打开 .md / .tex 文件…</button>
-        <button data-act="saveMd">保存 Markdown</button>
+        <button data-act="saveSource">保存源文件</button>
         <button data-act="downloadHtml">下载 HTML</button>
         <button data-act="loadSample">载入示例</button>
         <button data-act="clear" class="danger">清空</button>
@@ -135,10 +191,11 @@ app.innerHTML = `
 <main class="workspace">
   <section class="pane editor-pane">
     <div class="pane-head">
-      <span>源文本</span>
+      <input id="articleTitle" class="article-title" aria-label="文章标题" placeholder="未命名文章" maxlength="120">
       <span class="pane-head-hint" id="inputHint"></span>
     </div>
     <textarea id="editor" spellcheck="false" placeholder="在此粘贴 Markdown 或 LaTeX……"></textarea>
+    <div id="articleSaveStatus" class="statusbar" role="status"></div>
   </section>
   <section class="pane preview-pane">
     <div class="pane-head">
@@ -371,6 +428,20 @@ app.innerHTML = `
 </div>
 
 <input type="file" id="fileInput" accept=".md,.markdown,.txt,.tex" class="hidden">
+
+<dialog id="articlesDialog" class="articles-dialog" aria-labelledby="articlesHeading">
+  <div class="modal-head">
+    <span id="articlesHeading">我的文章</span>
+    <form method="dialog"><button class="modal-close" aria-label="关闭文章列表">✕</button></form>
+  </div>
+  <div class="modal-body">
+    <div class="articles-actions">
+      <button id="newArticleBtn" class="btn primary">新建文章</button>
+      <span id="articleDialogStatus" role="status"></span>
+    </div>
+    <ul id="articleList" class="article-list"></ul>
+  </div>
+</dialog>
 `;
 
 /* ------------------------------------------------------------------ */
@@ -388,6 +459,15 @@ const warnBtn = $<HTMLButtonElement>('#warnBtn');
 const copyPlainBtn = $<HTMLButtonElement>('#copyPlainBtn');
 const fileInput = $<HTMLInputElement>('#fileInput');
 const inputHint = $<HTMLElement>('#inputHint');
+const articleTitle = $<HTMLInputElement>('#articleTitle');
+const articlesDialog = $<HTMLDialogElement>('#articlesDialog');
+
+function showSaveStatus(message: string, failed = false) {
+  const status = $('#articleSaveStatus');
+  status.textContent = message;
+  status.classList.toggle('status-error', failed);
+  $('#articleDialogStatus').textContent = failed ? message : '';
+}
 
 let lastResult: Awaited<ReturnType<typeof convert>> | null = null;
 let lastError: string | null = null;
@@ -461,10 +541,16 @@ preview.addEventListener('load', () => {
 let convertTimer: number | undefined;
 let converting = false;
 let pendingConvert = false;
+let conversionRevision = 0;
+let runningRevision = -1;
+let resultRevision = -1;
 
 async function runConvert() {
+  window.clearTimeout(convertTimer);
+  const revision = ++conversionRevision;
   if (converting) { pendingConvert = true; return; }
   converting = true;
+  runningRevision = revision;
   try {
     const result = await convert(state.content, {
       inputFormat: state.inputFormat,
@@ -475,7 +561,9 @@ async function runConvert() {
       wechatLinkFootnotes: state.wechatLinkFootnotes,
       zhihuDemoteH1: state.zhihuDemoteH1,
     });
+    if (revision !== conversionRevision) return;
     lastResult = result;
+    resultRevision = revision;
     lastError = null;
     $<HTMLButtonElement>('#refreshBtn').classList.remove('stale');
 
@@ -503,6 +591,7 @@ async function runConvert() {
       ? 'LaTeX 子集：公式用 $…$ 或 equation/align/gather 环境'
       : 'Markdown';
   } catch (e) {
+    if (revision !== conversionRevision) return;
     console.error(e);
     lastError = e instanceof Error ? e.message : String(e);
     statsEl.textContent = '转换失败：' + lastError;
@@ -564,8 +653,80 @@ function syncControls() {
 /* 事件绑定                                                            */
 /* ------------------------------------------------------------------ */
 
+function openArticle(article: Article, articles: Article[]) {
+  if (!persistState({ ...state, ...articleState(article), articles })) return;
+  if (articlesDialog.open) articlesDialog.close();
+  editor.value = state.content;
+  articleTitle.value = state.articleTitle;
+  editor.scrollTop = 0;
+  lastEditorRatio = 0;
+  closeThemeDrawer();
+  syncControls();
+  runConvert();
+  (article.content ? editor : articleTitle).focus();
+  if (!article.content && article.title === UNTITLED) articleTitle.select();
+}
+
+function createArticle(title = UNTITLED, content = '', inputFormat: InputFormat = 'markdown'): Article {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return { ...snapshotArticle(state), id, title, content, inputFormat };
+}
+
+function addArticle(article: Article) {
+  openArticle(article, [article, ...articlesWithCurrent()]);
+}
+
+function renderArticleList() {
+  const list = $('#articleList');
+  list.replaceChildren();
+  for (const article of articlesWithCurrent()) {
+    const row = document.createElement('li');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'article-open';
+    open.textContent = article.title;
+    const active = article.id === state.activeArticleId;
+    if (active) open.setAttribute('aria-current', 'true');
+    open.addEventListener('click', () => {
+      if (active) articlesDialog.close();
+      else openArticle(article, articlesWithCurrent());
+    });
+    const format = document.createElement('span');
+    format.textContent = article.inputFormat === 'latex' ? 'LaTeX' : 'Markdown';
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'btn ghost danger';
+    remove.textContent = '删除';
+    remove.setAttribute('aria-label', `删除 ${article.title}`);
+    remove.addEventListener('click', () => {
+      if (!window.confirm(`确定删除「${article.title}」吗？删除后无法恢复。`)) return;
+      const remaining = articlesWithCurrent().filter(({ id }) => id !== article.id);
+      if (active) {
+        if (!remaining.length) remaining.push(createArticle());
+        openArticle(remaining[0]!, remaining);
+      } else if (persistState({ ...state, articles: remaining })) {
+        renderArticleList();
+        $('#newArticleBtn').focus();
+      }
+    });
+    row.append(open, format, remove);
+    list.append(row);
+  }
+}
+
+$('#articlesBtn').addEventListener('click', () => {
+  renderArticleList();
+  articlesDialog.showModal();
+});
+$('#newArticleBtn').addEventListener('click', () => addArticle(createArticle()));
+articleTitle.addEventListener('input', () => {
+  state.articleTitle = articleTitle.value;
+  saveState();
+});
+
 editor.addEventListener('input', () => {
   state.content = editor.value;
+  conversionRevision++;
   saveState();
   if (state.livePreview) {
     scheduleConvert();
@@ -634,6 +795,10 @@ $<HTMLInputElement>('#livePreview').addEventListener('change', (e) => {
   state.livePreview = (e.target as HTMLInputElement).checked;
   saveState();
   if (state.livePreview) runConvert();
+  else if (resultRevision !== conversionRevision) {
+    window.clearTimeout(convertTimer);
+    $('#refreshBtn').classList.add('stale');
+  }
 });
 
 $('#refreshBtn').addEventListener('click', () => runConvert());
@@ -651,11 +816,12 @@ $<HTMLInputElement>('#zhihuDemoteH1').addEventListener('change', (e) => {
 });
 
 copyBtn.addEventListener('click', async () => {
-  if (!lastResult) return;
+  const result = resultForExport(copyBtn);
+  if (!result) return;
   const plain = state.platform === 'zhihu' && state.zhihuPaste === 'plain';
-  const html = plain ? '' : lastResult.exportHtml;
-  const text = plain ? lastResult.plainText : lastResult.exportHtml.replace(/<[^>]+>/g, '');
-  const how = plain ? (await textCopy(lastResult.plainText) ? 'api' : 'fail') : await richCopy(html, text);
+  const how = plain
+    ? (await textCopy(result.plainText) ? 'api' : 'fail')
+    : await richCopy(result.exportHtml, result.exportHtml.replace(/<[^>]+>/g, ''));
   if (how === 'fail') {
     flash(copyBtn, '复制失败 ✕');
   } else {
@@ -664,19 +830,33 @@ copyBtn.addEventListener('click', async () => {
 });
 
 copyPlainBtn.addEventListener('click', async () => {
-  if (!lastResult) return;
-  const ok = await textCopy(lastResult.plainText);
+  const result = resultForExport(copyPlainBtn);
+  if (!result) return;
+  const ok = await textCopy(result.plainText);
   flash(copyPlainBtn, ok ? '已复制 ✓' : '复制失败 ✕');
 });
 
+function resultForExport(button: HTMLElement) {
+  if (lastResult && resultRevision === conversionRevision) return lastResult;
+  flash(button, '正在更新，请稍后重试');
+  if (!converting || (runningRevision !== conversionRevision && !pendingConvert)) void runConvert();
+  return null;
+}
+
+const buttonFlashes = new WeakMap<HTMLElement, { timer: number; label: string; message: string }>();
+
 function flash(btn: HTMLElement, msg: string) {
-  const old = btn.textContent;
+  const previous = buttonFlashes.get(btn);
+  if (previous) window.clearTimeout(previous.timer);
+  const label = previous && btn.textContent === previous.message ? previous.label : btn.textContent ?? '';
   btn.textContent = msg;
   btn.classList.add('flashed');
-  window.setTimeout(() => {
-    btn.textContent = old;
+  const timer = window.setTimeout(() => {
+    if (btn.textContent === msg) btn.textContent = label;
     btn.classList.remove('flashed');
+    buttonFlashes.delete(btn);
   }, 1800);
+  buttonFlashes.set(btn, { timer, label, message: msg });
 }
 
 /* 预览 / 源码 tabs */
@@ -700,11 +880,12 @@ moreMenu.addEventListener('click', async (e) => {
   const act = (e.target as HTMLElement).dataset.act;
   moreMenu.classList.add('hidden');
   if (act === 'open') fileInput.click();
-  if (act === 'saveMd') download(state.content, 'article.md', 'text/markdown');
-  if (act === 'downloadHtml' && lastResult) {
-    download(lastResult.exportHtml, 'article.html', 'text/html');
+  if (act === 'saveSource') saveSource();
+  if (act === 'downloadHtml') {
+    const result = resultForExport($('#moreBtn'));
+    if (result) download(result.exportHtml, 'article.html', 'text/html');
   }
-  if (act === 'loadSample') { editor.value = SAMPLE_DOC; state.content = SAMPLE_DOC; saveState(); runConvert(); }
+  if (act === 'loadSample') addArticle(createArticle('示例文章', SAMPLE_DOC));
   if (act === 'clear') {
     if (!window.confirm('确定要清空当前内容吗？此操作不可撤销。')) return;
     editor.value = '';
@@ -715,14 +896,15 @@ moreMenu.addEventListener('click', async (e) => {
 });
 
 async function loadFile(file: File) {
-  const text = await file.text();
-  editor.value = text;
-  state.content = text;
-  state.inputFormat = file.name.endsWith('.tex') ? 'latex' : 'markdown';
-  syncControls();
-  saveState();
-  runConvert();
-  fileInput.value = '';
+  try {
+    const content = await file.text();
+    const title = file.name.replace(/\.(md|markdown|txt|tex)$/i, '').slice(0, 120) || UNTITLED;
+    addArticle(createArticle(title, content, /\.tex$/i.test(file.name) ? 'latex' : 'markdown'));
+  } catch {
+    showSaveStatus('无法读取文件，请重新打开。', true);
+  } finally {
+    fileInput.value = '';
+  }
 }
 
 fileInput.addEventListener('change', async () => {
@@ -746,7 +928,7 @@ document.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
   if (key === 's') {
     e.preventDefault();
-    download(state.content, 'article.md', 'text/markdown');
+    saveSource();
   } else if (key === 'c' && e.shiftKey) {
     e.preventDefault();
     copyBtn.click();
@@ -758,6 +940,11 @@ document.addEventListener('keydown', (e) => {
     runConvert();
   }
 });
+
+function saveSource() {
+  if (state.inputFormat === 'latex') download(state.content, 'article.tex', 'text/plain');
+  else download(state.content, 'article.md', 'text/markdown');
+}
 
 function download(content: string, name: string, mime: string) {
   const blob = new Blob([content], { type: mime });
@@ -968,6 +1155,13 @@ galleryBox.addEventListener('click', (e) => {
   syncVisualUIFromConfig(curVisualConfig);
   markDirty(true);
   updateGalleryActive();
+  // 手写主题无法由可视化参数完整还原（如实心标题、黑头表格），直接套用原样式
+  if (!t.visualConfig) {
+    activeThemeOverride = t;
+    themeJson.value = JSON.stringify(t, null, 2);
+    runConvert();
+    return;
+  }
   applyVisualChange();
 });
 
@@ -1059,7 +1253,10 @@ $<HTMLSelectElement>('#vCodeTheme').addEventListener('change', (e) => {
 $('#vThemeSaveBtn').addEventListener('click', () => {
   const nameInput = $<HTMLInputElement>('#vThemeSaveName');
   const name = nameInput.value.trim() || '我的主题 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-  const theme = buildThemeFromVisualConfig(name, curVisualConfig);
+  // 预览的是手写主题时按原样式另存，避免被可视化参数“降级”成近似主题
+  const theme = activeThemeOverride && !activeThemeOverride.visualConfig
+    ? { name, styles: activeThemeOverride.styles, hljs: activeThemeOverride.hljs }
+    : buildThemeFromVisualConfig(name, curVisualConfig);
   state.customThemes[name] = theme;
   state.themeName = name;
   activeThemeOverride = null;
@@ -1182,5 +1379,7 @@ $('#themeDeleteBtn').addEventListener('click', () => {
 /* ------------------------------------------------------------------ */
 
 editor.value = state.content;
+articleTitle.value = state.articleTitle;
 syncControls();
+saveState();
 runConvert();
