@@ -492,20 +492,69 @@ let activeTab: 'preview' | 'html' = 'preview';
 let previewScrollLockUntil = 0;
 let editorScrollRaf = 0;
 let previewReady = false;
+let previewNeedsRestore = false;
+let previewRevision = -1;
+let previewArticleId: string | undefined;
 let locationRequest = 0;
 let pendingLocation: (SourceLocation & { id: number }) | null = null;
+
+interface ScrollPosition { editor: number; preview: number }
+const scrollPositions = new Map<string, ScrollPosition>();
+const scrollKey = (id: string) => 'md2publish.scroll.v1:' + id;
+
+function articleScrollPosition(): ScrollPosition {
+  const id = state.activeArticleId;
+  const cached = scrollPositions.get(id);
+  if (cached) return cached;
+  const position = { editor: 0, preview: 0 };
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(scrollKey(id)) ?? 'null') as Partial<ScrollPosition> | null;
+    if (typeof saved?.editor === 'number' && Number.isFinite(saved.editor) && saved.editor >= 0) position.editor = saved.editor;
+    if (typeof saved?.preview === 'number' && Number.isFinite(saved.preview) && saved.preview >= 0) position.preview = saved.preview;
+  } catch { /* the preview can still keep its current position in memory */ }
+  scrollPositions.set(id, position);
+  return position;
+}
+
+function rememberScroll(pane: keyof ScrollPosition, top: number) {
+  if (!Number.isFinite(top) || top < 0) return;
+  const position = articleScrollPosition();
+  if (position[pane] === top) return;
+  position[pane] = top;
+  try { sessionStorage.setItem(scrollKey(state.activeArticleId), JSON.stringify(position)); }
+  catch { /* storage may be disabled */ }
+}
+
+function restoreEditorScroll() {
+  previewScrollLockUntil = Date.now() + 120;
+  editor.scrollTop = articleScrollPosition().editor;
+}
 
 /** 注入预览 iframe 的滚动代理：沙箱内回传/接收滚动比例 */
 const PREVIEW_SCROLL_SCRIPT = `<script>
 (function () {
   var lock = false;
   var unlockTimer;
+  var revision = Number(document.documentElement.dataset.previewRevision);
   function scroller() { return document.scrollingElement || document.documentElement || document.body; }
   function programmaticScroll() {
     lock = true;
     clearTimeout(unlockTimer);
     unlockTimer = setTimeout(function () { lock = false; }, 100);
   }
+  function reportScroll() {
+    var el = scroller();
+    var max = el.scrollHeight - el.clientHeight;
+    parent.postMessage({ type: 'md2-scroll', revision: revision, top: el.scrollTop,
+      ratio: max > 0 ? el.scrollTop / max : 0, sync: !lock }, '*');
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    var initialTop = Number(document.documentElement.dataset.previewTop);
+    if (initialTop > 0) {
+      programmaticScroll();
+      scroller().scrollTop = initialTop;
+    }
+  });
   function sourceBlock(request) {
     var mapped, span = Infinity;
     document.querySelectorAll('[data-source-lines]').forEach(function (element) {
@@ -539,32 +588,27 @@ const PREVIEW_SCROLL_SCRIPT = `<script>
   }
   window.addEventListener('message', function (ev) {
     var d = ev.data;
-    if (ev.source !== parent || !d) return;
+    if (ev.source !== parent || !d || d.revision !== revision) return;
     if (d.type === 'md2-locate-source') {
       var target = sourceBlock(d);
       if (target) {
         programmaticScroll();
         target.scrollIntoView({ block: 'center' });
+        reportScroll();
         target.animate([{ outline: '2px solid #4a7dd9' }, { outline: '2px solid transparent' }], 900);
       }
       parent.postMessage({ type: 'md2-locate-result', id: d.id, found: !!target }, '*');
       return;
     }
-    if (d.type !== 'md2-scroll-to') return;
+    if (d.type !== 'md2-scroll-to' && d.type !== 'md2-restore-scroll') return;
     var el = scroller();
-    var max = el.scrollHeight - el.clientHeight;
-    if (max <= 0) return;
     programmaticScroll();
-    var ratio = Math.max(0, Math.min(1, Number(d.ratio) || 0));
-    el.scrollTop = ratio * max;
+    var max = Math.max(0, el.scrollHeight - el.clientHeight);
+    el.scrollTop = d.type === 'md2-restore-scroll' ? Math.min(max, Math.max(0, Number(d.top) || 0))
+      : Math.max(0, Math.min(1, Number(d.ratio) || 0)) * max;
+    reportScroll();
   });
-  document.addEventListener('scroll', function () {
-    if (lock) return;
-    var el = scroller();
-    var max = el.scrollHeight - el.clientHeight;
-    if (max <= 0) return;
-    parent.postMessage({ type: 'md2-scroll', ratio: el.scrollTop / max }, '*');
-  }, { passive: true });
+  document.addEventListener('scroll', reportScroll, { passive: true });
   document.addEventListener('click', function (event) {
     var diagram = event.target.closest && event.target.closest('button[data-save-diagram]');
     if (diagram) {
@@ -581,20 +625,32 @@ const PREVIEW_SCROLL_SCRIPT = `<script>
 
 // 左侧编辑器滚动 -> 同步右侧预览
 function syncPreviewScroll() {
-  if (!state.syncScroll) return;
+  if (!state.syncScroll || !previewReady || activeTab !== 'preview'
+    || previewArticleId !== state.activeArticleId) return;
   const max = editor.scrollHeight - editor.clientHeight;
   const ratio = max > 0 ? editor.scrollTop / max : 0;
-  preview.contentWindow?.postMessage({ type: 'md2-scroll-to', ratio }, '*');
+  preview.contentWindow?.postMessage({ type: 'md2-scroll-to', revision: previewRevision, ratio }, '*');
+}
+
+function restorePreviewScroll() {
+  if (!previewReady || !previewNeedsRestore || activeTab !== 'preview'
+    || previewArticleId !== state.activeArticleId) return;
+  previewNeedsRestore = false;
+  preview.contentWindow?.postMessage({
+    type: 'md2-restore-scroll', revision: previewRevision, top: articleScrollPosition().preview,
+  }, '*');
 }
 
 function locateInPreview() {
   if (!previewReady || !pendingLocation || resultRevision !== conversionRevision) return false;
-  preview.contentWindow?.postMessage({ type: 'md2-locate-source', ...pendingLocation }, '*');
+  previewNeedsRestore = false;
+  preview.contentWindow?.postMessage({ type: 'md2-locate-source', revision: previewRevision, ...pendingLocation }, '*');
   pendingLocation = null;
   return true;
 }
 
 editor.addEventListener('scroll', () => {
+  rememberScroll('editor', editor.scrollTop);
   if (!state.syncScroll || Date.now() < previewScrollLockUntil) return;
   if (editorScrollRaf) return;
   editorScrollRaf = requestAnimationFrame(() => {
@@ -606,7 +662,10 @@ editor.addEventListener('scroll', () => {
 // 右侧预览滚动 -> 同步左侧编辑器
 window.addEventListener('message', (ev) => {
   if (ev.source !== preview.contentWindow) return;
-  const d = ev.data as { type?: string; ratio?: number; id?: number; found?: boolean; diagramId?: string } | null;
+  const d = ev.data as {
+    type?: string; ratio?: number; top?: number; sync?: boolean; revision?: number;
+    id?: number; found?: boolean; diagramId?: string;
+  } | null;
   if (d?.type === 'md2-save-diagram' && typeof d.diagramId === 'string') {
     const svg = lastResult?.diagramSvgs.get(d.diagramId);
     if (svg) void saveDiagramPng(svg, d.diagramId);
@@ -615,8 +674,10 @@ window.addEventListener('message', (ev) => {
   if (d?.type === 'md2-locate-result' && d.id === locationRequest && !d.found) {
     flash(locateBtn, '未找到对应段落');
   }
-  if (!state.syncScroll) return;
-  if (!d || d.type !== 'md2-scroll' || typeof d.ratio !== 'number') return;
+  if (!d || d.type !== 'md2-scroll' || d.revision !== previewRevision || !previewReady
+    || activeTab !== 'preview' || previewArticleId !== state.activeArticleId) return;
+  if (typeof d.top === 'number') rememberScroll('preview', d.top);
+  if (!state.syncScroll || !d.sync || typeof d.ratio !== 'number' || !Number.isFinite(d.ratio)) return;
   previewScrollLockUntil = Date.now() + 120;
   const max = editor.scrollHeight - editor.clientHeight;
   if (max > 0) editor.scrollTop = d.ratio * max;
@@ -636,7 +697,7 @@ async function saveDiagramPng(svg: string, id: string) {
 
 preview.addEventListener('load', () => {
   previewReady = true;
-  if (!locateInPreview()) syncPreviewScroll();
+  if (!locateInPreview()) restorePreviewScroll();
 });
 
 /* ------------------------------------------------------------------ */
@@ -667,18 +728,26 @@ async function runConvert() {
       zhihuDemoteH1: state.zhihuDemoteH1,
     });
     if (revision !== conversionRevision) return;
+    const replacePreview = result.previewHtml !== lastResult?.previewHtml || previewArticleId !== state.activeArticleId;
     lastResult = result;
     resultRevision = revision;
     lastError = null;
     $<HTMLButtonElement>('#refreshBtn').classList.remove('stale');
 
     // 预览（保持沙箱隔离；滚动由注入脚本与父页面通过 postMessage 联动）
-    previewReady = false;
-    preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8">${PREVIEW_SCROLL_SCRIPT}<style>
+    if (replacePreview) {
+      previewReady = false;
+      previewNeedsRestore = true;
+      previewRevision = revision;
+      previewArticleId = state.activeArticleId;
+      preview.srcdoc = `<!doctype html><html data-preview-revision="${revision}" data-preview-top="${articleScrollPosition().preview}"><head><meta charset="utf-8">${PREVIEW_SCROLL_SCRIPT}<style>
       body{margin:0;padding:18px;background:#fff;}
       svg{max-width:100%;}
       button[data-save-diagram]{margin-top:8px;padding:2px 9px;border:1px solid #8e9cb3;border-radius:4px;background:#fff;color:#334155;font:12px system-ui;cursor:pointer;}
-    </style></head><body>${result.previewHtml}</body></html>`;
+      </style></head><body>${result.previewHtml}</body></html>`;
+    } else {
+      locateInPreview();
+    }
 
     htmlView.textContent = state.platform === 'zhihu' && state.zhihuPaste === 'plain'
       ? result.plainText
@@ -773,11 +842,11 @@ function openArticle(article: Article, articles: Article[]) {
   pendingLocation = null;
   locationRequest++;
   articleTitle.value = state.articleTitle;
-  editor.scrollTop = 0;
   closeThemeDrawer();
   syncControls();
+  (article.content ? editor : articleTitle).focus({ preventScroll: true });
+  restoreEditorScroll();
   runConvert();
-  (article.content ? editor : articleTitle).focus();
   if (!article.content && article.title === UNTITLED) articleTitle.select();
 }
 
@@ -1000,6 +1069,7 @@ for (const tab of app.querySelectorAll<HTMLButtonElement>('.tab')) {
     for (const t of app.querySelectorAll('.tab')) t.classList.toggle('active', t === tab);
     preview.classList.toggle('hidden', activeTab !== 'preview');
     htmlView.classList.toggle('hidden', activeTab !== 'html');
+    if (activeTab === 'preview') restorePreviewScroll();
   });
 }
 
@@ -1512,5 +1582,6 @@ $('#themeDeleteBtn').addEventListener('click', () => {
 editor.value = state.content;
 articleTitle.value = state.articleTitle;
 syncControls();
+restoreEditorScroll();
 saveState();
 runConvert();
