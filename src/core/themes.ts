@@ -2,9 +2,12 @@
  * 主题系统：每个主题 = 「选择器 → 内联 CSS」映射 + 代码高亮配色。
  * 全部落到 style 属性上，公众号编辑器只认内联样式。
  *
- * 现已原汁原味还原 mdnice 官方 15 套高颜值爆款主题，
- * 兼具直观模式与代码模式自由调节能力。
+ * 内置 mdnice 主题和奇幻主题，支持可视化调节与 JSON 编辑。
  */
+import fantasyElf from './theme-presets/fantasy-1-elf.json';
+import fantasyScroll from './theme-presets/fantasy-2-scroll.json';
+import fantasyAcademy from './theme-presets/fantasy-3-academy.json';
+import fantasyNight from './theme-presets/fantasy-4-night.json';
 
 export interface Theme {
   name: string;
@@ -13,8 +16,8 @@ export interface Theme {
   /** highlight.js token → 颜色（用于 pre 代码块） */
   hljs: Record<string, string>;
   builtin?: boolean;
-  /** 主题分组：mdnice 官方爆款 / 经典学术 / 暗色 */
-  category?: 'mdnice' | 'classic' | 'dark';
+  /** 内置主题分组 */
+  category?: 'mdnice' | 'fantasy';
   /** 如果由可视化配置生成，保存其配置快照便于二次可视化调节 */
   visualConfig?: ThemeVisualConfig;
 }
@@ -31,7 +34,7 @@ export interface ThemeVisualConfig {
   textColor: string;
   fontFamily: FontFamilyType;
   fontSize: number;          // 14 | 15 | 16 | 17
-  lineHeight: number;        // 1.6 | 1.8 | 2.0 | 2.2
+  lineHeight: number;        // 1.6 | 1.8 | 1.9 | 2.0 | 2.2
   justify: boolean;          // 两端对齐 text-align: justify
   indent: boolean;           // 首行缩进 2 字符
   h2Style: H2StyleType;
@@ -361,10 +364,10 @@ export function extractVisualConfig(theme: Theme): ThemeVisualConfig {
 }
 
 /* ------------------------------------------------------------------ */
-/* 18 套精选内置主题（完整还原 mdnice 官方经典 + 学术论文规范）       */
+/* 内置主题                                                           */
 /* ------------------------------------------------------------------ */
 
-export const BUILTIN_THEMES: Theme[] = [
+const MDNICE_THEMES: Theme[] = [
   // 1. 橙心 · 暖橙徽章 (mdnice 官方代表作)
   buildThemeFromVisualConfig('橙心 · 暖橙徽章 (mdnice官方)', {
     primaryColor: '#ef7060',
@@ -605,204 +608,16 @@ export const BUILTIN_THEMES: Theme[] = [
     codeTheme: 'monokai',
   }),
 
-  // 16. 学术规范 · 衬线三线表 (数学与科研论文专享)
-  buildThemeFromVisualConfig('学术规范 · 衬线三线表', {
-    primaryColor: '#1a3c6e',
-    textColor: '#2c3e50',
-    fontFamily: 'serif',
-    fontSize: 15,
-    lineHeight: 2.0,
-    justify: true,
-    indent: true,
-    h2Style: 'border-bottom',
-    quoteStyle: 'double-border',
-    tableStyle: 'academic',
-    strongStyle: 'color',
-    codeTheme: 'one-dark',
-  }),
+];
 
-  // 17. 极简黑白 · 纯净阅读
-  buildThemeFromVisualConfig('极简黑白 · 纯净阅读', {
-    primaryColor: '#111111',
-    textColor: '#222222',
-    fontFamily: 'sans',
-    fontSize: 15,
-    lineHeight: 1.8,
-    justify: true,
-    indent: false,
-    h2Style: 'center',
-    quoteStyle: 'minimal',
-    tableStyle: 'academic',
-    strongStyle: 'black',
-    codeTheme: 'github-light',
-  }),
+const FANTASY_THEMES = [fantasyElf, fantasyScroll, fantasyAcademy, fantasyNight];
 
-  // 18. 默认 · 经典科技蓝
-  buildThemeFromVisualConfig('默认 · 经典科技蓝', {
-    primaryColor: '#4a90d9',
-    textColor: '#3f3f3f',
-    fontFamily: 'sans',
-    fontSize: 15,
-    lineHeight: 1.8,
-    justify: true,
-    indent: false,
-    h2Style: 'border-left',
-    quoteStyle: 'bar',
-    tableStyle: 'striped',
-    strongStyle: 'color',
-    codeTheme: 'one-dark',
-  }),
-  // 19. Obsidian · 暗夜（深色阅读）
-  {
-    name: 'Obsidian · 暗夜',
-    builtin: true,
-    category: 'dark',
-    styles: {
-      root: 'font-size:15px;color:#d6d6d6;line-height:1.85;background:#1e1e24;padding:22px 18px;border-radius:10px;letter-spacing:0.4px;text-align:justify;word-break:break-word;',
-      p: 'margin:1.25em 0;line-height:1.85;',
-      h1: 'margin:1.6em 0 1em;font-size:22px;font-weight:bold;text-align:center;color:#f0f0f0;',
-      h2: 'margin:1.7em 0 1em;font-size:19px;font-weight:bold;color:#7ee787;border-left:4px solid #2ea043;padding-left:10px;',
-      h3: 'margin:1.4em 0 0.8em;font-size:17px;font-weight:bold;color:#7ee787;',
-      h4: 'margin:1.2em 0 0.6em;font-size:15px;font-weight:bold;color:#e6e6e6;',
-      h5: 'margin:1em 0 0.5em;font-size:15px;color:#c9c9c9;',
-      h6: 'margin:1em 0 0.5em;font-size:14px;color:#a8a8a8;',
-      strong: 'color:#7ee787;font-weight:bold;',
-      em: 'font-style:italic;color:#e0e0e0;',
-      del: 'text-decoration:line-through;color:#8b8b8b;',
-      a: 'color:#58a6ff;text-decoration:none;border-bottom:1px solid #58a6ff;',
-      ul: 'margin:1em 0;padding-left:1.5em;',
-      ol: 'margin:1em 0;padding-left:1.7em;',
-      li: 'margin:0.4em 0;line-height:1.85;',
-      blockquote: 'margin:1.4em 0;padding:12px 16px;color:#b9b9b9;border-left:4px solid #d29922;background:#2a2a32;border-radius:0 6px 6px 0;',
-      'blockquote p': 'margin:0.4em 0;color:#b9b9b9;',
-      code: 'background:#2a2a32;color:#ff7b72;padding:2px 6px;border-radius:4px;font-family:Menlo,Consolas,monospace;font-size:88%;',
-      pre: 'background:#16161a;border:1px solid #30363d;border-radius:7px;padding:14px 16px;overflow-x:auto;margin:1.4em 0;line-height:1.6;',
-      'pre code': 'background:transparent;color:#c9d1d9;padding:0;border-radius:0;font-size:13px;font-family:Menlo,Consolas,monospace;',
-      table: 'border-collapse:collapse;width:100%;margin:1.3em 0;font-size:14px;',
-      th: 'border:1px solid #30363d;background:#22222a;padding:9px 12px;text-align:left;color:#f0f0f0;',
-      td: 'border:1px solid #30363d;padding:8px 12px;',
-      img: 'max-width:100%;border-radius:6px;margin:0 auto;display:block;opacity:0.92;',
-      hr: 'border:none;border-top:1px dashed #3a3a44;margin:2em 0;',
-      figcaption: 'text-align:center;color:#8b8b8b;font-size:12.5px;margin-top:0.5em;',
-      sup: 'font-size:75%;',
-    },
-    hljs: oneDark(),
-  },
-
-  // 20. 黑金 · 夜色（深色高端）
-  {
-    name: '黑金 · 夜色',
-    builtin: true,
-    category: 'dark',
-    styles: {
-      root: 'font-size:15px;color:#e8e0cf;line-height:1.9;background:#14110c;padding:24px 18px;border-radius:10px;letter-spacing:0.5px;text-align:justify;word-break:break-word;',
-      p: 'margin:1.25em 0;line-height:1.9;',
-      h1: 'margin:1.6em 0 1em;font-size:22px;font-weight:bold;text-align:center;color:#f5ecd7;letter-spacing:2px;',
-      h2: 'margin:1.8em 0 1em;font-size:19px;font-weight:bold;color:#d4af37;text-align:center;letter-spacing:1px;',
-      h3: 'margin:1.4em 0 0.8em;font-size:17px;font-weight:bold;color:#d4af37;',
-      h4: 'margin:1.2em 0 0.6em;font-size:15px;font-weight:bold;color:#efe6d2;',
-      h5: 'margin:1em 0 0.5em;font-size:15px;color:#cabfa8;',
-      h6: 'margin:1em 0 0.5em;font-size:14px;color:#a99f8a;',
-      strong: 'color:#d4af37;font-weight:bold;',
-      em: 'font-style:italic;color:#efe6d2;',
-      del: 'text-decoration:line-through;color:#8a8272;',
-      a: 'color:#d4af37;text-decoration:none;border-bottom:1px solid #d4af37;',
-      ul: 'margin:1em 0;padding-left:1.5em;',
-      ol: 'margin:1em 0;padding-left:1.7em;',
-      li: 'margin:0.4em 0;line-height:1.9;',
-      blockquote: 'margin:1.4em 0;padding:12px 16px;color:#cdc3ad;border-left:3px double #d4af37;background:#1d1912;',
-      'blockquote p': 'margin:0.4em 0;color:#cdc3ad;',
-      code: 'background:#241f16;color:#e6c07b;padding:2px 6px;border-radius:4px;font-family:Menlo,Consolas,monospace;font-size:88%;',
-      pre: 'background:#0d0b08;border:1px solid #2e2819;border-radius:7px;padding:14px 16px;overflow-x:auto;margin:1.4em 0;line-height:1.6;',
-      'pre code': 'background:transparent;color:#d8cfba;padding:0;border-radius:0;font-size:13px;font-family:Menlo,Consolas,monospace;',
-      table: 'border-collapse:collapse;width:100%;margin:1.3em 0;font-size:14px;',
-      th: 'border:1px solid #2e2819;background:#1d1912;padding:9px 12px;text-align:left;color:#d4af37;',
-      td: 'border:1px solid #2e2819;padding:8px 12px;',
-      img: 'max-width:100%;border-radius:6px;margin:0 auto;display:block;',
-      hr: 'border:none;border-top:1px solid #2e2819;margin:2em 0;',
-      figcaption: 'text-align:center;color:#8a8272;font-size:12.5px;margin-top:0.5em;',
-      sup: 'font-size:75%;',
-    },
-    hljs: oneDark(),
-  },
-
-  // 21. 锋刃 · 冷感电光（编辑部风格：黑白 + 电光蓝）
-  {
-    name: '锋刃 · 冷感电光',
-    builtin: true,
-    styles: {
-      root: 'font-size:15px;color:#2B303B;line-height:1.85;letter-spacing:0.3px;text-align:justify;text-justify:inter-ideograph;word-break:break-word;background:#FFFFFF;padding:24px 20px;border-radius:2px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;',
-      p: 'margin:1.25em 0;line-height:1.85;',
-      h1: 'margin:0.8em 0 1.5em;padding:14px 0;border-top:3px solid #1F35FF;border-bottom:3px solid #0B0D12;font-size:24px;font-weight:800;line-height:1.35;letter-spacing:0.3px;color:#0B0D12;text-align:left;',
-      h2: 'margin:2.1em 0 1em;padding:7px 16px 7px 13px;background:#0B0D12;border-left:6px solid #1F35FF;border-radius:2px;font-size:18px;font-weight:700;line-height:1.5;letter-spacing:0.5px;color:#FFFFFF;display:inline-block;',
-      h3: 'margin:1.8em 0 0.8em;padding-left:10px;border-left:4px solid #1F35FF;font-size:16.5px;font-weight:700;line-height:1.5;color:#0B0D12;',
-      h4: 'margin:1.5em 0 0.6em;padding-bottom:5px;border-bottom:1px solid #E1E5EF;font-size:15px;font-weight:700;line-height:1.6;color:#0B0D12;',
-      h5: 'margin:1.2em 0 0.5em;font-size:15px;font-weight:700;color:#2B303B;',
-      h6: 'margin:1.2em 0 0.5em;font-size:13px;font-weight:600;letter-spacing:1.2px;color:#8A90A0;',
-      strong: 'font-weight:700;color:#0B0D12;background:#EDF0FF;padding:0 3px;border-radius:2px;',
-      em: 'font-style:italic;color:#4A5060;',
-      del: 'text-decoration:line-through;color:#98A0B0;',
-      a: 'color:#1A2ED8;text-decoration:none;border-bottom:1px solid rgba(31,53,255,0.35);',
-      ul: 'margin:1.1em 0;padding-left:1.35em;list-style-type:square;',
-      ol: 'margin:1.1em 0;padding-left:1.6em;',
-      li: 'margin:0.45em 0;line-height:1.85;',
-      blockquote: 'margin:1.6em 0;padding:14px 18px;background:#F5F7FD;border-left:4px solid #1F35FF;border-radius:0 3px 3px 0;color:#4A5060;font-size:14.5px;line-height:1.8;',
-      'blockquote p': 'margin:0.35em 0;color:#4A5060;',
-      code: 'background:#F0F2FB;color:#1A2ED8;padding:2px 6px;border-radius:3px;font-family:SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:88%;letter-spacing:0;',
-      pre: 'background:#0B0D12;border-top:3px solid #1F35FF;border-radius:3px;padding:16px 18px;overflow-x:auto;margin:1.6em 0;line-height:1.65;',
-      'pre code': 'background:transparent;color:#DDE2F0;padding:0;border-radius:0;font-size:13px;letter-spacing:0;font-family:SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;',
-      table: 'border-collapse:collapse;width:100%;margin:1.6em 0;font-size:14px;border-top:2px solid #0B0D12;border-bottom:2px solid #0B0D12;',
-      th: 'background:#0B0D12;color:#FFFFFF;padding:9px 12px;text-align:left;font-weight:600;border:none;',
-      td: 'padding:9px 12px;border:none;border-bottom:1px solid #E6E9F1;color:#2B303B;',
-      img: 'max-width:100%;border-radius:3px;margin:0 auto;display:block;',
-      hr: 'border:none;border-top:1px solid #E1E5EF;margin:2.6em 0;',
-      figcaption: 'text-align:center;color:#8A90A0;font-size:12.5px;margin-top:0.6em;letter-spacing:0.4px;',
-      sup: 'font-size:75%;',
-    },
-    hljs: oneDark(),
-  },
-
-  // 22. 锋刃 · 暗夜电光（同一设计语言的深色版）
-  {
-    name: '锋刃 · 暗夜电光',
-    builtin: true,
-    category: 'dark',
-    styles: {
-      root: 'font-size:15px;color:#C7CDDB;line-height:1.85;letter-spacing:0.3px;text-align:justify;text-justify:inter-ideograph;word-break:break-word;background:#0A0C11;padding:24px 20px;border-radius:2px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;',
-      p: 'margin:1.25em 0;line-height:1.85;',
-      h1: 'margin:0.8em 0 1.5em;padding:14px 0;border-top:3px solid #6C86FF;border-bottom:3px solid #F4F6FC;font-size:24px;font-weight:800;line-height:1.35;letter-spacing:0.3px;color:#F4F6FC;text-align:left;',
-      h2: 'margin:2.1em 0 1em;padding:7px 16px 7px 13px;background:#6C86FF;border-left:6px solid #0A0C11;border-radius:2px;font-size:18px;font-weight:700;line-height:1.5;letter-spacing:0.5px;color:#08090D;display:inline-block;',
-      h3: 'margin:1.8em 0 0.8em;padding-left:10px;border-left:4px solid #6C86FF;font-size:16.5px;font-weight:700;line-height:1.5;color:#F4F6FC;',
-      h4: 'margin:1.5em 0 0.6em;padding-bottom:5px;border-bottom:1px solid #232838;font-size:15px;font-weight:700;line-height:1.6;color:#EDF0F8;',
-      h5: 'margin:1.2em 0 0.5em;font-size:15px;font-weight:700;color:#D5DAE6;',
-      h6: 'margin:1.2em 0 0.5em;font-size:13px;font-weight:600;letter-spacing:1.2px;color:#8A93A8;',
-      strong: 'font-weight:700;color:#F4F6FC;background:#1B2340;padding:0 3px;border-radius:2px;',
-      em: 'font-style:italic;color:#B9C0D0;',
-      del: 'text-decoration:line-through;color:#6E7688;',
-      a: 'color:#9DB0FF;text-decoration:none;border-bottom:1px solid rgba(108,134,255,0.4);',
-      ul: 'margin:1.1em 0;padding-left:1.35em;list-style-type:square;',
-      ol: 'margin:1.1em 0;padding-left:1.6em;',
-      li: 'margin:0.45em 0;line-height:1.85;',
-      blockquote: 'margin:1.6em 0;padding:14px 18px;background:#10141F;border-left:4px solid #6C86FF;border-radius:0 3px 3px 0;color:#B9C0D0;font-size:14.5px;line-height:1.8;',
-      'blockquote p': 'margin:0.35em 0;color:#B9C0D0;',
-      code: 'background:#151B2B;color:#9DB0FF;padding:2px 6px;border-radius:3px;font-family:SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:88%;letter-spacing:0;',
-      pre: 'background:#05070C;border-top:3px solid #6C86FF;border-radius:3px;padding:16px 18px;overflow-x:auto;margin:1.6em 0;line-height:1.65;',
-      'pre code': 'background:transparent;color:#D5DBEA;padding:0;border-radius:0;font-size:13px;letter-spacing:0;font-family:SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;',
-      table: 'border-collapse:collapse;width:100%;margin:1.6em 0;font-size:14px;border-top:2px solid #6C86FF;border-bottom:2px solid #6C86FF;',
-      th: 'background:#6C86FF;color:#08090D;padding:9px 12px;text-align:left;font-weight:600;border:none;',
-      td: 'padding:9px 12px;border:none;border-bottom:1px solid #232838;color:#C7CDDB;',
-      img: 'max-width:100%;border-radius:3px;margin:0 auto;display:block;opacity:0.95;',
-      hr: 'border:none;border-top:1px solid #232838;margin:2.6em 0;',
-      figcaption: 'text-align:center;color:#8A93A8;font-size:12.5px;margin-top:0.6em;letter-spacing:0.4px;',
-      sup: 'font-size:75%;',
-    },
-    hljs: oneDark(),
-  },
-].map((t) => ({
-  ...t,
-  builtin: true,
-  category: (t.category ?? (t.name.includes('mdnice官方') ? 'mdnice' : 'classic')) as Theme['category'],
-}));
+export const BUILTIN_THEMES: Theme[] = [
+  ...MDNICE_THEMES.map((theme): Theme => ({ ...theme, builtin: true, category: 'mdnice' })),
+  ...FANTASY_THEMES.map(({ name, styles, hljs, visualConfig }): Theme => ({
+    name, styles, hljs, visualConfig: visualConfig as ThemeVisualConfig, builtin: true, category: 'fantasy',
+  })),
+];
 
 /** 把主题样式套到 DOM 片段上：逐选择器 querySelectorAll，后应用的选择器覆盖先应用的。 */
 export function applyThemeStyles(frag: DocumentFragment | HTMLElement, theme: Theme): string[] {

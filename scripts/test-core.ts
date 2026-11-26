@@ -179,9 +179,12 @@ console.log('\n[主题系统]');
   check('实色徽章 H2', t.styles.h2!.includes('#ef7060') && t.styles.h2!.includes('border-radius:4px'));
   check('两端对齐', t.styles.root!.includes('justify'));
   check('主题可校验', validateTheme(t) === null);
-  check('内置主题数量 >= 20', BUILTIN_THEMES.length >= 20, String(BUILTIN_THEMES.length));
-  check('内置主题含暗色分类', BUILTIN_THEMES.some((x) => x.category === 'dark'));
-  check('内置主题含 mdnice 分类', BUILTIN_THEMES.some((x) => x.category === 'mdnice'));
+  check('保留 15 套 mdnice 与 4 套奇幻主题', BUILTIN_THEMES.length === 19
+    && BUILTIN_THEMES.filter((theme) => theme.category === 'mdnice').length === 15
+    && BUILTIN_THEMES.filter((theme) => theme.category === 'fantasy').length === 4);
+  check('奇幻主题保留各自的正文和手写标题样式', BUILTIN_THEMES.filter((theme) => theme.category === 'fantasy').every(
+    (theme) => validateTheme(theme) === null && theme.styles.root?.includes('line-height:1.9')
+      && theme.styles.h3?.includes('position:relative')));
 }
 
 console.log(`\n结果：${passed} 通过，${failed} 失败\n`);

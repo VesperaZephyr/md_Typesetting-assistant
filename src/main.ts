@@ -77,6 +77,10 @@ function loadState(): AppState {
     if (storedState) {
       const saved = JSON.parse(storedState) as Partial<AppState>;
       const restored = { ...fallback, ...saved, content: saved.content ?? SAMPLE_DOC };
+      const themeNames = new Set([...BUILTIN_THEMES, ...Object.values(restored.customThemes)].map(({ name }) => name));
+      if (!themeNames.has(restored.themeName)) restored.themeName = DEFAULT_THEME_NAME;
+      restored.articles = restored.articles.map((article) => themeNames.has(article.themeName)
+        ? article : { ...article, themeName: DEFAULT_THEME_NAME });
       const active = restored.articles.find((article) => article.id === restored.activeArticleId);
       if (active) return { ...restored, ...articleState(active) };
       restored.articleTitle = restored.content === SAMPLE_DOC ? '示例文章' : '原有草稿';
@@ -304,6 +308,7 @@ app.innerHTML = `
                 <div class="btn-group" id="vLineHeightGroup">
                   <button type="button" class="opt-btn" data-val="1.6">1.6 紧凑</button>
                   <button type="button" class="opt-btn active" data-val="1.8">1.8 适中</button>
+                  <button type="button" class="opt-btn" data-val="1.9">1.9</button>
                   <button type="button" class="opt-btn" data-val="2.0">2.0 舒缓</button>
                   <button type="button" class="opt-btn" data-val="2.2">2.2 宽松</button>
                 </div>
@@ -1096,13 +1101,12 @@ let themeOriginalName = state.themeName;
 let drawerSelectedName = state.themeName;
 let themeDirty = false;
 
-/** 按「mdnice 官方 / 学术经典 / 我的自定义」分组填充主题下拉框 */
+/** 按内置主题和自定义主题分组填充下拉框 */
 function fillThemeSelect(sel: HTMLSelectElement) {
   sel.innerHTML = '';
   const groups: Array<[string, Theme[]]> = [
-    ['mdnice 官方爆款', BUILTIN_THEMES.filter((t) => t.category === 'mdnice')],
-    ['学术 · 极简 · 经典', BUILTIN_THEMES.filter((t) => t.category === 'classic')],
-    ['暗色主题', BUILTIN_THEMES.filter((t) => t.category === 'dark')],
+    ['mdnice 官方主题', BUILTIN_THEMES.filter((t) => t.category === 'mdnice')],
+    ['奇幻主题', BUILTIN_THEMES.filter((t) => t.category === 'fantasy')],
     ['我的自定义主题', Object.values(state.customThemes)],
   ];
   for (const [label, items] of groups) {
@@ -1259,14 +1263,10 @@ galleryBox.addEventListener('click', (e) => {
   syncVisualUIFromConfig(curVisualConfig);
   markDirty(true);
   updateGalleryActive();
-  // 手写主题无法由可视化参数完整还原（如实心标题、黑头表格），直接套用原样式
-  if (!t.visualConfig) {
-    activeThemeOverride = t;
-    themeJson.value = JSON.stringify(t, null, 2);
-    runConvert();
-    return;
-  }
-  applyVisualChange();
+  // 选择预设时直接应用原样式，可视化参数仅用于后续手动调整。
+  activeThemeOverride = t;
+  themeJson.value = JSON.stringify(t, null, 2);
+  runConvert();
 });
 
 // 画廊收起 / 展开
@@ -1356,13 +1356,15 @@ $<HTMLSelectElement>('#vCodeTheme').addEventListener('change', (e) => {
 // 可视化面板保存为主题
 $('#vThemeSaveBtn').addEventListener('click', () => {
   const nameInput = $<HTMLInputElement>('#vThemeSaveName');
-  const name = nameInput.value.trim() || '我的主题 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-  // 预览的是手写主题时按原样式另存，避免被可视化参数“降级”成近似主题
-  const theme = activeThemeOverride && !activeThemeOverride.visualConfig
-    ? { name, styles: activeThemeOverride.styles, hljs: activeThemeOverride.hljs }
-    : buildThemeFromVisualConfig(name, curVisualConfig);
-  state.customThemes[name] = theme;
-  state.themeName = name;
+  const previewed = currentTheme();
+  const requestedName = nameInput.value.trim();
+  if (!requestedName && allThemes().includes(previewed)) {
+    state.themeName = previewed.name;
+  } else {
+    const name = requestedName || '我的主题 ' + new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    state.customThemes[name] = { name, styles: previewed.styles, hljs: previewed.hljs, visualConfig: previewed.visualConfig };
+    state.themeName = name;
+  }
   activeThemeOverride = null;
   saveState();
   syncControls();
