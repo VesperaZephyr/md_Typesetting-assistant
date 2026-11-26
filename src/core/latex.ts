@@ -8,8 +8,10 @@
  */
 import { extractMath, type MathSeg } from './mathExtract';
 import { escapeAttr } from './exporters';
+import { BRACKET_ARGUMENT, formatEnumeration, readEnumeration, type Enumeration } from './enumerate';
 
 export const PROOF_END_MARKUP = '<span data-proof-end="">∎</span>';
+const ENVIRONMENT_BOUNDARY = new RegExp(/\\(begin|end)\{([\w@*:-]+)\}/.source + '(' + BRACKET_ARGUMENT.source + ')?');
 
 export interface LatexResult {
   markdown: string;
@@ -214,6 +216,16 @@ export function latexToMarkdown(src: string): LatexResult {
   /* 3. 数学宏收集（宏通常在导言区，必须在 document 截取之前做） */
   const collected = collectMacros(s);
   s = collected.text;
+  const enumerateDefaults = new Map<number, Partial<Enumeration>>();
+  const listCounters = ['enumi', 'enumii', 'enumiii', 'enumiv'];
+  collected.macros = collected.macros.filter((macro) => {
+    const match = /^\\label(enum(?:i{1,3}|iv))$/.exec(macro.name);
+    if (!match || macro.numArgs !== 0) return true;
+    const depth = listCounters.indexOf(match[1]!) + 1;
+    enumerateDefaults.set(depth, { ...enumerateDefaults.get(depth), label: macro.body });
+    return false;
+  });
+  s = collectEnumerateDefaults(s, enumerateDefaults, warnings);
 
   /* 4. 标题、作者（同样在导言区） */
   let title = '';
@@ -250,7 +262,7 @@ export function latexToMarkdown(src: string): LatexResult {
   }
 
   /* 5. 文本命令改写（注意顺序：长命令在前，\text 兜底在后） */
-  s = resolveReferences(s, segs, theorems, equationWithin, warnings);
+  s = resolveReferences(s, segs, theorems, equationWithin, enumerateDefaults, warnings);
   s = processHref(s);
   s = replaceCmd(s, 'url', (x) => x);
   s = replaceCmd(s, 'textbf', (x) => `**${x.trim()}**`);
@@ -399,8 +411,30 @@ interface Reference extends ReferenceTarget { id: string }
 const HEADINGS = ['part', 'chapter', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph'];
 const HEADING_NAMES = ['部分', '章', '节', '小节', '小节', '段', '子段'];
 
+function collectEnumerateDefaults(source: string, defaults: Map<number, Partial<Enumeration>>, warnings: string[]): string {
+  const commands = /\\setlist\s*\[\s*enumerate(?:\s*,\s*([1-4]))?\s*\]\s*(?=\{)/g;
+  let cursor = 0;
+  let result = '';
+  let match: RegExpExecArray | null;
+  while ((match = commands.exec(source))) {
+    const arg = readArg(source, commands.lastIndex);
+    if (!arg) continue;
+    const depth = Number(match[1] ?? 0);
+    const options = readEnumeration('[' + arg[0] + ']', defaults.get(depth), (message) => warn(warnings, '列表', message));
+    const prior = defaults.get(depth);
+    const next: Partial<Enumeration> = { ...options };
+    if (prior?.start === undefined && !/(?:^|,)\s*start\s*=/.test(arg[0])) delete next.start;
+    defaults.set(depth, next);
+    result += source.slice(cursor, match.index);
+    cursor = arg[1];
+    commands.lastIndex = cursor;
+  }
+  return result + source.slice(cursor);
+}
+
 function resolveReferences(
   s: string, segs: MathSeg[], theorems: Map<string, Theorem>, equationWithin: string | undefined,
+  enumerateDefaults: Map<number, Partial<Enumeration>>,
   warnings: string[],
 ): string {
   const refs = new Map<string, Reference>();
@@ -409,8 +443,14 @@ function resolveReferences(
   const duplicates = new Set<string>();
   const counters = new Map<string, number>();
   const headings = new Map<string, ReferenceTarget>();
-  const scopes: { env: string; target?: ReferenceTarget; capturesLabel: boolean; item?: number }[] = [];
+  const scopes: { env: string; target?: ReferenceTarget; capturesLabel: boolean; item?: number; enumeration?: Enumeration }[] = [];
   let heading: ReferenceTarget | undefined;
+
+  function listText(value: string): string {
+    let text = value.replace(/@@MATH(\d+)@@/g, (_placeholder, index: string) => segs[Number(index)]?.tex ?? '');
+    for (const command of ['textup', 'textnormal', 'textbf', 'textit', 'textsc']) text = replaceCmd(text, command, (x) => x);
+    return text.replace(/\\(?:bullet|star|dagger)\b/g, (command) => ({ '\\bullet': '•', '\\star': '★', '\\dagger': '†' })[command]!);
+  }
 
   function nextNumber(counter: string, within?: string) {
     const prefix = within ? headings.get(within)?.number : undefined;
@@ -436,9 +476,11 @@ function resolveReferences(
     return '<span id="' + id + '"></span>';
   }
 
-  const tokens = /\\(begin|end)\{([\w@*:-]+)\}(\[[^\]]*\])?|\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph|caption|item)(\*)?(?![A-Za-z*])|@@MATH(\d+)@@|\\label\s*\{([^{}]*)\}/g;
+  const tokens = new RegExp(ENVIRONMENT_BOUNDARY.source
+    + /|\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph|caption)(\*)?(?![A-Za-z*])|@@MATH(\d+)@@|\\label\s*\{([^{}]*)\}|\\(item)(?![A-Za-z])/.source
+    + '(?:[ \t]*(' + BRACKET_ARGUMENT.source + '))?', 'g');
   s = s.replace(tokens, (match, boundary: string, env: string, name: string, cmd: string,
-    star: string, math: string, label: string) => {
+    star: string, math: string, label: string, itemCommand: string, itemOption?: string) => {
     if (boundary === 'begin') {
       const theorem = theoremFor(env, theorems);
       const float = /^(figure|table)\*?$/.test(env);
@@ -453,7 +495,13 @@ function resolveReferences(
         return match + '\n\n**' + theorem.title + (number ? ' ' + number : '') + '**' + subtitle + '\n\n';
       }
       const list = /^(itemize|enumerate|description)$/.test(env);
-      scopes.push({ env, capturesLabel: float || list, item: list ? 0 : undefined });
+      const depth = scopes.filter((scope) => scope.enumeration).length + 1;
+      const enumeration = env === 'enumerate'
+        ? readEnumeration(name, { ...enumerateDefaults.get(0), ...enumerateDefaults.get(depth) },
+          (message) => warn(warnings, '列表', message))
+        : undefined;
+      scopes.push({ env, capturesLabel: float || list, item: enumeration ? enumeration.start - 1 : list ? 0 : undefined,
+        enumeration });
       return match;
     }
     if (boundary === 'end') {
@@ -476,14 +524,21 @@ function resolveReferences(
       }
       return match;
     }
-    if (cmd === 'item') {
+    if (itemCommand) {
       const list = [...scopes].reverse().find((scope) => scope.item !== undefined);
-      if (list?.env === 'enumerate') {
-        list.item = (list.item ?? 0) + 1;
-        const parents = scopes.slice(0, scopes.indexOf(list)).filter((scope) => scope.env === 'enumerate');
-        if (parents.length === 0) list.target = { title: '条目', number: String(list.item) };
-      }
-      return match;
+      if (!list?.enumeration) return match;
+      const explicit = itemOption?.slice(1, -1).trim();
+      if (explicit === undefined) list.item = (list.item ?? 0) + 1;
+      const number = list.item ?? 1;
+      const parents = scopes.slice(0, scopes.indexOf(list)).filter((scope) => scope.enumeration)
+        .map((scope) => scope.item ?? 0);
+      const { label: pattern, ref } = list.enumeration;
+      const printed = explicit === undefined ? formatEnumeration(listText(pattern ?? '\\arabic*.'), number, parents) : listText(explicit);
+      list.target = { title: '条目', number: explicit === undefined
+        ? formatEnumeration(listText(ref ?? pattern ?? '\\arabic*'), number, parents) : printed };
+      const native = explicit === undefined && pattern === undefined ? String(number) : '';
+      return '\\item <span data-enumerate-label="' + escapeAttr(printed) + '" data-enumerate-native="'
+        + native + '"></span> ';
     }
     if (label !== undefined) {
       const frame = [...scopes].reverse().find((scope) => scope.capturesLabel);
@@ -588,7 +643,7 @@ function convertBlocks(s: string, theorems: Map<string, Theorem>, segs: MathSeg[
   while (true) {
     const stack: { env: string; start: number; end: number; options: string }[] = [];
     let converted = false;
-    for (const token of s.matchAll(/\\(begin|end)\{([\w@*:-]+)\}(\[[^\]]*\])?/g)) {
+    for (const token of s.matchAll(new RegExp(ENVIRONMENT_BOUNDARY.source, 'g'))) {
       const env = token[2]!;
       if (token[1] === 'begin') {
         stack.push({ env, start: token.index, end: token.index + token[0].length, options: token[3] ?? '' });
@@ -599,7 +654,7 @@ function convertBlocks(s: string, theorems: Map<string, Theorem>, segs: MathSeg[
       stack.pop();
       let body = s.slice(open.end, token.index);
       const theorem = theoremFor(env, theorems);
-      if (/^(itemize|enumerate|description)$/.test(env)) body = renderList(body, env, warnings);
+      if (/^(itemize|enumerate|description)$/.test(env)) body = renderList(body, env);
       else if (theorem) {
         const kind = theoremKind(env, theorem.title);
         if (kind === 'proof') {
@@ -617,7 +672,7 @@ function convertBlocks(s: string, theorems: Map<string, Theorem>, segs: MathSeg[
   }
 }
 
-function renderList(content: string, kind: string, warnings: string[]): string {
+function renderList(content: string, kind: string): string {
   const n = content.length;
   const starts: number[] = [];
   let envDepth = 0;
@@ -649,7 +704,6 @@ function renderList(content: string, kind: string, warnings: string[]): string {
     if (kind === 'itemize') prefix = '- ';
     else if (kind === 'enumerate') {
       prefix = counter + '. ';
-      if (label) warn(warnings, '列表', `enumerate 的自定义编号 ${label} 已忽略`);
     } else prefix = '- ';
     if (label && kind !== 'enumerate') item = '**' + label + '** ' + item;
     const pad = ' '.repeat(prefix.length);

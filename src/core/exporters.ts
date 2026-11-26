@@ -38,11 +38,25 @@ export function stripClasses(
     }
     if (!anchors.has(el.id)) el.removeAttribute('id');
     for (const name of Array.from(el.attributes)) {
-      if (name.name === 'data-proof-end') continue;
+      if (name.name === 'data-proof-end' || name.name === 'data-enumerate-label' || name.name === 'data-enumerate-native') continue;
       if (keep.keepSourceLines && name.name === 'data-source-lines') continue;
       if (name.name.startsWith('data-') || name.name.startsWith('aria-')) el.removeAttribute(name.name);
     }
   }
+}
+
+/** Keep reference wording in WeChat clipboard HTML even when the editor strips fragment links. */
+export function wechatClipboardHtml(html: string): string {
+  if (!html.includes('href="#latex-ref-')) return html;
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  for (const link of template.content.querySelectorAll('a[href^="#latex-ref-"]')) {
+    const label = document.createElement('strong');
+    label.style.fontWeight = '600';
+    label.append(...Array.from(link.childNodes));
+    link.replaceWith(label);
+  }
+  return template.innerHTML;
 }
 
 /** 删除所有 style 属性（知乎富文本模式下用）。 */

@@ -7,6 +7,7 @@ import {
   type BlockquoteStyleType, type TableStyleType, type StrongStyleType, type CodeThemeType,
 } from './core/themes';
 import { richCopy, textCopy } from './core/clipboard';
+import { wechatClipboardHtml } from './core/exporters';
 import { svgToPng } from './core/mathRender';
 import { sourceLocation, type SourceLocation } from './core/sourceLocation';
 import { SAMPLE_DOC } from './sample';
@@ -1022,9 +1023,10 @@ copyBtn.addEventListener('click', async () => {
   const result = resultForExport(copyBtn);
   if (!result) return;
   const plain = state.platform === 'zhihu' && state.zhihuPaste === 'plain';
+  const html = state.platform === 'wechat' ? wechatClipboardHtml(result.exportHtml) : result.exportHtml;
   const how = plain
     ? (await textCopy(result.plainText) ? 'api' : 'fail')
-    : await richCopy(result.exportHtml, result.exportHtml.replace(/<[^>]+>/g, ''));
+    : await richCopy(html, html.replace(/<[^>]+>/g, ''));
   if (how === 'fail') {
     flash(copyBtn, '复制失败 ✕');
   } else {

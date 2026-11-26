@@ -119,11 +119,13 @@ C \arrow[r, "g"'] & D
 
 支持章节、文本强调、嵌套列表、引用块、表格、插图、代码环境、脚注和数学宏。
 
+有序列表支持 `\begin{enumerate}[(i)]`、`\begin{enumerate}[label=(\arabic*)]` 等编号写法，也支持 `start`、`ref`、`\item[自定义]` 和常见的 `\setlist[enumerate]{…}`。公众号导出会把自定义编号写进正文。
+
 定理类环境在预览与公众号 HTML 中使用卡片样式。证明以正文段落排版，保留标题，证毕符号放在末行右侧。预览里，重复标签和无法解析的引用会分别标色，悬停可查看对应标签。数学稿的混排和卡片设计参考了 [markdown-mods](https://github.com/libinyam/markdown-mods)。
 
 - `\colorbox`、`\fcolorbox` 和基础 `tcolorbox` 可保留盒内文本和列表。`tcolorbox` 支持 `title`、`colback` 和 `colframe`。
 - 支持常规定理、证明、`definition-proposition`、`definition-theorem` 和通过 `\newtheorem` 声明的环境，包括共享计数器与按章节编号。
-- `\ref`、`\eqref`、`\autoref`、`\cref`、`\Cref` 可引用章节、定理、编号公式、插图和表格。预览与导出 HTML 包含文内跳转。无法解析的标签显示为 `??` 并列入警告。`\pageref` 依赖纸面页码，网页转换不计算页码。
+- `\ref`、`\eqref`、`\autoref`、`\cref`、`\Cref` 可引用章节、定理、编号公式、列表项、插图和表格。排版助手预览与下载的 HTML 可以点击跳转。复制到公众号时会保留可读的引用编号。无法解析的标签显示为 `??` 并列入警告。`\pageref` 依赖纸面页码，网页转换不计算页码。
 
 不识别的命令/环境会**保留原文并列入警告**（状态栏 ⚠），不会静默吞掉内容。复杂宏包排版（TikZ、chem 等）不在范围内。
 

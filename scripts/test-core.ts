@@ -214,6 +214,38 @@ z &= x+y \label{eq:later}
       && /@@MATH0@@\s*\n\n\s*<span data-proof-end/.test(displayProof.markdown), displayProof.markdown);
 }
 
+{
+  const source = String.raw`\setlist[enumerate,2]{label=(\roman*)}
+\begin{enumerate}[label={[\arabic*]}, start=3, ref=\arabic*]
+\item\label{item:first} 第三项。
+\begin{enumerate}
+\item\label{item:sub} 罗马编号。
+\end{enumerate}
+\item[补充] 自定义标签。
+\item 第四项。
+\end{enumerate}
+见 \ref{item:first} 和 \ref{item:sub}。
+\begin{enumerate}[(I)]
+\item 大写罗马编号。
+\end{enumerate}`;
+  const r = latexToMarkdown(source);
+  check('列表保留方括号、罗马数字、起始号和逐项标签',
+    ['[3]', '(i)', '补充', '[4]', '(I)'].every((label) => r.markdown.includes('data-enumerate-label="' + label + '"')),
+    r.markdown);
+  check('列表 ref 设置和嵌套条目引用与编号一致',
+    /href="#latex-ref-1">3<\/a>/.test(r.markdown) && /href="#latex-ref-2">\(i\)<\/a>/.test(r.markdown),
+    r.markdown);
+  const alternate = latexToMarkdown(String.raw`\renewcommand{\labelenumi}{(\alph{enumi})}
+\begin{enumerate}
+\item 首项。
+\item[$\star$] 特殊项。
+\item 次项。
+\end{enumerate}`);
+  check('支持旧版 labelenumi 和数学文本标签，手填标签不占自动编号',
+    ['(a)', '★', '(b)'].every((label) => alternate.markdown.includes('data-enumerate-label="' + label + '"'))
+      && !alternate.preamble.includes('labelenumi'), alternate.markdown);
+}
+
 console.log('\n[TikZ-CD]');
 {
   const source = String.raw`\begin{tikzcd}[column sep=1.5cm,ampersand replacement=\&]

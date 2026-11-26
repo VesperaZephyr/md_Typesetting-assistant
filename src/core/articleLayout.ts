@@ -131,3 +131,54 @@ export function layoutProofEnds(html: string, alignRight: boolean): string {
   }
   return template.innerHTML;
 }
+
+/** The HTML on the clipboard carries visible labels independently of editor CSS or list counters. */
+export function layoutEnumerations(html: string, browserPreview: boolean): string {
+  if (!html.includes('data-enumerate-label')) return html;
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  const lists = Array.from(template.content.querySelectorAll<HTMLOListElement>('ol')).reverse();
+  for (const list of lists) {
+    const items = Array.from(list.querySelectorAll<HTMLLIElement>(':scope > li'));
+    const labels = items.map((item) => item.querySelector<HTMLElement>(
+      ':scope > span[data-enumerate-label], :scope > p:first-child > span[data-enumerate-label]'));
+    if (!labels.length || labels.some((label) => !label)) continue;
+    const first = Number(labels[0]?.dataset.enumerateNative);
+    const explicit = labels.some((label) => !label?.dataset.enumerateNative) || (!browserPreview && first !== 1);
+    if (!explicit) {
+      if (first !== 1) list.start = first;
+      for (const label of labels) label?.remove();
+      continue;
+    }
+    for (const label of labels) {
+      const value = label!.dataset.enumerateLabel ?? '';
+      label!.removeAttribute('data-enumerate-label');
+      label!.removeAttribute('data-enumerate-native');
+      if (value) {
+        label!.textContent = value;
+        label!.style.whiteSpace = 'nowrap';
+        label!.after(' ');
+      } else label!.remove();
+    }
+    if (browserPreview) {
+      list.style.listStyleType = 'none';
+      continue;
+    }
+    const section = document.createElement('section');
+    section.setAttribute('role', 'list');
+    section.style.cssText = list.style.cssText;
+    for (const item of items) {
+      const row = document.createElement('section');
+      row.setAttribute('role', 'listitem');
+      row.style.cssText = item.style.cssText;
+      row.append(...Array.from(item.childNodes));
+      section.append(row);
+    }
+    list.replaceWith(section);
+  }
+  for (const marker of template.content.querySelectorAll<HTMLElement>('[data-enumerate-label]')) {
+    // If additional authored HTML prevents list recognition, keep the label as plain text.
+    marker.replaceWith(marker.dataset.enumerateLabel ?? '');
+  }
+  return template.innerHTML;
+}

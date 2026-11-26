@@ -4,7 +4,7 @@
  *         → 主题样式落地 → 平台整理（公众号/知乎）→ 公式标记替换 → 导出 HTML
  */
 import { md, renderMarkdownWithSourceLines } from './markdown';
-import { layoutInlineMath, styleTheoremCards, highlightReferenceIssues, layoutProofEnds } from './articleLayout';
+import { layoutInlineMath, styleTheoremCards, highlightReferenceIssues, layoutProofEnds, layoutEnumerations } from './articleLayout';
 import { displayMathPlaceholders, extractMath, restoreMath, type MathSeg } from './mathExtract';
 import { latexToMarkdown, expandZeroArgMacros, PROOF_END_MARKUP } from './latex';
 import { renderTexToSvg, renderTexToPng, svgExToPx, svgToPng, MathRenderError } from './mathRender';
@@ -224,7 +224,7 @@ async function substitute(
     });
   }
   html = html.replace(/@@MATH(\d+)@@/g, (m0, idx) => rendered.get('@@MATH' + idx + '@@') ?? m0);
-  return layoutProofEnds(html, opts.platform === 'wechat');
+  return layoutEnumerations(layoutProofEnds(html, opts.platform === 'wechat'), downloadable !== undefined);
 }
 
 /**
@@ -286,6 +286,9 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   if (opts.platform === 'wechat') {
     const tpl = document.createElement('template');
     tpl.innerHTML = baseHtml;
+    if (tpl.content.querySelector('a[href^="#latex-ref-"]')) {
+      warnings.push('公众号手机预览中的文内锚点不能可靠跳转，复制到公众号时会保留引用编号。排版助手预览和下载的 HTML 可点击跳转。');
+    }
     inlineHljsColors(tpl.content, opts.theme);
     applyThemeStyles(tpl.content, opts.theme);
     layoutInlineMath(tpl.content, segs);
@@ -323,7 +326,12 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   }
 
   /* ---- 纯文本（知乎 Markdown 直贴模式） ---- */
-  const plainText = restoreMath(skeleton.split(PROOF_END_MARKUP).join('∎'), segs, (seg) =>
+  const plainSource = skeleton.split(PROOF_END_MARKUP).join('∎').replace(
+    /^([ \t>]*)\d+\.[ \t]+<span data-enumerate-label="([^"]*)" data-enumerate-native="(\d*)"><\/span>[ \t]*/gm,
+    (_match, indent: string, label: string, native: string) => indent + (native ? native + '.' : label
+      .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')) + ' ',
+  );
+  const plainText = restoreMath(plainSource, segs, (seg) =>
     seg.diagram ? seg.raw : seg.display ? '$$' + seg.tex + '$$' : '$' + seg.tex + '$'
   );
 
