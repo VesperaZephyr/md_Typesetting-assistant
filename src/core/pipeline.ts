@@ -5,12 +5,13 @@
  */
 import { md, renderMarkdownWithSourceLines } from './markdown';
 import { layoutInlineMath, styleTheoremCards, highlightReferenceIssues } from './articleLayout';
-import { extractMath, restoreMath, type MathSeg } from './mathExtract';
+import { diagramPlaceholders, extractMath, restoreMath, type MathSeg } from './mathExtract';
 import { latexToMarkdown, expandZeroArgMacros } from './latex';
-import { renderTexToSvg, renderTexToPng, svgExToPx, MathRenderError } from './mathRender';
+import { renderTexToSvg, renderTexToPng, svgExToPx, svgToPng, MathRenderError } from './mathRender';
+import { renderTikzDiagram } from './tikzRender';
 import { applyThemeStyles, type Theme } from './themes';
 import {
-  inlineHljsColors, stripClasses, stripStyles,
+  escapeAttr, inlineHljsColors, stripClasses, stripStyles,
   zhihuEquationImg, zhihuEquationText, type ZhihuMathMode,
 } from './exporters';
 
@@ -38,7 +39,37 @@ export interface ConvertResult {
   /** 纯文本（知乎「粘贴 Markdown 文本」模式用，公式保留 $...$） */
   plainText: string;
   warnings: string[];
-  stats: { chars: number; mathCount: number };
+  stats: { chars: number; mathCount: number; diagramCount: number };
+  diagramSvgs: Map<string, string>;
+}
+
+async function renderSegDiagram(seg: MathSeg, opts: ConvertOptions, preamble: string,
+  warnings: string[], diagramCache: Map<string, string>, downloadable?: Map<string, string>): Promise<string> {
+  try {
+    if (seg.diagram === 'tikzpicture') throw new Error('普通 tikzpicture 暂不支持');
+    const theme = document.createElement('span').style;
+    if (opts.platform === 'wechat') theme.cssText = opts.theme.styles['root'] ?? '';
+    const ink = theme.color || '#222222';
+    const paper = theme.backgroundColor || '#ffffff';
+    const key = JSON.stringify([ink, paper, seg.tex]);
+    const svg = diagramCache.get(key) ?? renderTikzDiagram(seg.tex, preamble, ink, paper);
+    diagramCache.set(key, svg);
+    const diagramId = seg.placeholder.slice('@@MATH'.length, -2);
+    downloadable?.set(diagramId, svg);
+    let markup = svg;
+    if (opts.platform === 'zhihu' || opts.wechatMath === 'png') {
+      const png = await svgToPng(svg);
+      markup = '<img alt="交换图" src="' + png.dataUrl + '" width="' + png.width + '" height="' + png.height
+        + '" style="max-width:100%;height:auto;">';
+    }
+    const button = downloadable ? '<div><button type="button" data-save-diagram="' + diagramId
+      + '">下载 PNG</button></div>' : '';
+    return '<section style="text-align:center;margin:1.2em 0;overflow-x:auto;">' + markup + button + '</section>';
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    warnings.push('交换图未能渲染：' + message);
+    return '<pre style="white-space:pre-wrap;"><code>' + escapeAttr(seg.raw) + '</code></pre>';
+  }
 }
 
 function renderSegSvg(seg: MathSeg, preamble: string, unit: 'ex' | 'px' = 'ex'): string {
@@ -142,9 +173,12 @@ async function substitute(
   opts: ConvertOptions,
   preamble: string,
   warnings: string[],
+  diagramCache: Map<string, string>,
+  downloadable?: Map<string, string>,
 ): Promise<string> {
   const cache = new Map<string, string>();
   const renderOne = async (seg: MathSeg): Promise<string> => {
+    if (seg.diagram) return renderSegDiagram(seg, opts, preamble, warnings, diagramCache, downloadable);
     const mode = opts.platform === 'wechat' ? 'svg:' + opts.wechatMath : 'zhihu:' + opts.zhihuMath;
     const key = mode + '|' + (mode.startsWith('svg') ? preamble : '') + '|' + seg.tex + '|' + seg.display;
     const hit = cache.get(key);
@@ -180,11 +214,11 @@ async function substitute(
   // 否则会产出非法的 <p><section>…</section></p>，公众号解析时可能多出空行。
   const blockMath = opts.platform === 'wechat' || (opts.platform === 'zhihu' && opts.zhihuMath === 'eeimg');
   let html = skeletonHtml;
-  if (blockMath) {
+  if (blockMath || diagramPlaceholders(segs).size) {
     html = html.replace(/<p(?:\s[^>]*)?>\s*@@MATH(\d+)@@\s*<\/p>/g, (m0, idx: string) => {
       const seg = segs[Number(idx)];
       const markup = rendered.get('@@MATH' + idx + '@@');
-      if (!seg?.display || !markup) return m0;
+      if (!seg?.display || !markup || (!blockMath && !seg.diagram)) return m0;
       const sourceLines = /^<p[^>]* (data-source-lines="\d+:\d+")/.exec(m0)?.[1];
       return sourceLines ? markup.replace(/^<section\b/, '<section ' + sourceLines) : markup;
     });
@@ -202,10 +236,6 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   let preamble = '';
   let mathMacros: ReturnType<typeof latexToMarkdown>['macros'] = [];
 
-  if (source.includes('\\begin{tikzcd}') || source.includes('\\begin{tikzpicture}')) {
-    warnings.push('💡 检测到 tikz-cd/tikzpicture 交换图：建议在本地编译或在线工具（如 tikzcd.yichuanshen.de ）一键导出为矢量 SVG/PNG 图片插入，可获最高清显示并完美兼容微信与知乎。');
-  }
-
   if (opts.inputFormat === 'latex') {
     const r = latexToMarkdown(source);
     skeleton = r.markdown;
@@ -219,7 +249,11 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
     segs = r.segs;
   }
 
-  const baseHtml = opts.inputFormat === 'markdown' ? renderMarkdownWithSourceLines(skeleton, segs) : md.render(skeleton);
+  const baseHtml = opts.inputFormat === 'markdown' ? renderMarkdownWithSourceLines(skeleton, segs)
+    : md.render(skeleton, { diagramPlaceholders: diagramPlaceholders(segs) });
+  const diagramCount = segs.filter((seg) => seg.diagram).length;
+  const diagramCache = new Map<string, string>();
+  const diagramSvgs = new Map<string, string>();
   warnLocalImages(baseHtml, warnings);
 
   /* ---- 视觉预览：主题 + SVG 公式，与平台无关 ---- */
@@ -241,7 +275,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   const previewSkeletonHtml = previewWrap.outerHTML;
   let previewHtml: string;
   try {
-    previewHtml = await substitute(previewSkeletonHtml, segs, { ...opts, platform: 'wechat', wechatMath: 'svg' }, preamble, warnings);
+    previewHtml = await substitute(previewSkeletonHtml, segs, { ...opts, platform: 'wechat', wechatMath: 'svg' }, preamble, warnings, diagramCache, diagramSvgs);
   } catch {
     previewHtml = previewSkeletonHtml;
   }
@@ -262,7 +296,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
     const wrap = document.createElement('section');
     wrap.setAttribute('style', opts.theme.styles['root'] || '');
     wrap.append(...Array.from(tpl.content.childNodes));
-    exportHtml = await substitute(wrap.outerHTML, segs, opts, preamble, warnings);
+    exportHtml = await substitute(wrap.outerHTML, segs, opts, preamble, warnings, diagramCache);
   } else {
     const tpl = document.createElement('template');
     tpl.innerHTML = baseHtml;
@@ -274,19 +308,22 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
     if (opts.zhihuDemoteH1) demoteH1ToH2(tpl.content);
     // 知乎公式不经过 MathJax，宏需要文本展开
     const expandedSegs = segs.map((seg) => {
-      if (!mathMacros.length) return seg;
+      if (!mathMacros.length || seg.diagram) return seg;
       const { tex, usedArgMacros } = expandZeroArgMacros(seg.tex, mathMacros);
       if (usedArgMacros.length) {
         warnings.push(`宏 ${[...new Set(usedArgMacros)].join(' ')} 带参数，知乎公式模式不支持，请手动展开`);
       }
       return { ...seg, tex };
     });
-    exportHtml = await substitute(tpl.innerHTML, expandedSegs, opts, '', warnings);
+    exportHtml = await substitute(tpl.innerHTML, expandedSegs, opts, preamble, warnings, diagramCache);
+    if (segs.some((seg) => seg.diagram === 'tikzcd')) {
+      warnings.push('知乎富文本中的 TikZ-CD 图使用嵌入 PNG。若粘贴时图片被过滤，请在目标编辑器上传交换图图片。');
+    }
   }
 
   /* ---- 纯文本（知乎 Markdown 直贴模式） ---- */
   const plainText = restoreMath(skeleton, segs, (seg) =>
-    seg.display ? '$$' + seg.tex + '$$' : '$' + seg.tex + '$'
+    seg.diagram ? seg.raw : seg.display ? '$$' + seg.tex + '$$' : '$' + seg.tex + '$'
   );
 
   return {
@@ -294,6 +331,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
     previewHtml,
     plainText,
     warnings: [...new Set(warnings)],
-    stats: { chars: source.length, mathCount: segs.length },
+    stats: { chars: source.length, mathCount: segs.length - diagramCount, diagramCount },
+    diagramSvgs,
   };
 }

@@ -19,9 +19,10 @@ export interface MathSeg {
   display: boolean;
   /** 原始定界符，用于纯文本还原 */
   raw: string;
+  diagram?: 'tikzcd' | 'tikzpicture';
 }
 
-const MATH_ENVS = ['equation', 'align', 'gather', 'multline', 'eqnarray', 'alignat', 'flalign', 'displaymath'];
+const MATH_ENVS = ['equation', 'align', 'gather', 'multline', 'eqnarray', 'alignat', 'flalign', 'displaymath', 'tikzcd', 'tikzpicture'];
 
 const MATH_ENV_RE = new RegExp(
   '^\\\\begin\\{((?:' + MATH_ENVS.join('|') + ')\\*?)\\}'
@@ -39,7 +40,8 @@ export function extractMath(src: string): { text: string; segs: MathSeg[] } {
 
   const addSeg = (tex: string, display: boolean, raw: string) => {
     const placeholder = `@@MATH${segs.length}@@`;
-    segs.push({ placeholder, tex, display, raw });
+    const diagram = /^\\begin\{(tikzcd|tikzpicture)\}/.exec(tex)?.[1] as MathSeg['diagram'];
+    segs.push({ placeholder, tex, display: display || Boolean(diagram), raw, diagram });
     out += placeholder;
   };
 
@@ -47,10 +49,12 @@ export function extractMath(src: string): { text: string; segs: MathSeg[] } {
     const ch = src[i]!;
 
     // ---- 围栏代码块：整块原样保留 -------------------------------------
-    if (ch === '`' && (i === 0 || src[i - 1] === '\n') && /^`{3,}/.test(src.slice(i))) {
-      const open = /^(`{3,})[^\n]*\n?/.exec(src.slice(i))!;
+    const open = (i === 0 || src[i - 1] === '\n') && /[ `~]/.test(ch)
+      ? /^ {0,3}(`{3,}|~{3,})[^\n]*\n?/.exec(src.slice(i))
+      : null;
+    if (open) {
       const fence = open[1]!;
-      const closeRe = new RegExp('^' + fence + '`*\\s*(\\n|$)');
+      const closeRe = new RegExp('^ {0,3}' + fence + fence[0] + '*[\\t \\r]*$');
       let j = i + open[0].length;
       let end = -1;
       while (j <= n) {
@@ -158,6 +162,10 @@ export function extractMath(src: string): { text: string; segs: MathSeg[] } {
   }
 
   return { text: out, segs };
+}
+
+export function diagramPlaceholders(segs: MathSeg[]): Set<string> {
+  return new Set(segs.filter((segment) => segment.diagram).map((segment) => segment.placeholder));
 }
 
 /** 把占位符替换回文本（纯文本还原用） */

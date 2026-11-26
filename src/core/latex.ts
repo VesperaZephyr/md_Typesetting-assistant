@@ -461,6 +461,7 @@ function resolveReferences(
     if (math !== undefined) {
       const segment = segs[Number(math)]!;
       if (!segment) return match;
+      if (segment.diagram) return match;
       const anchors = numberMath(segment, () => nextNumber('equation', equationWithin),
         (label, number) => anchor(label, number ? { title: '式', number } : undefined));
       return anchors ? '\n\n' + anchors + '\n\n' + match + '\n\n' : match;

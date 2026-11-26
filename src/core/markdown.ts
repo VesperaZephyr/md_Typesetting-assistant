@@ -1,6 +1,6 @@
 import MarkdownIt from 'markdown-it';
 import hljs from 'highlight.js/lib/common';
-import type { MathSeg } from './mathExtract';
+import { diagramPlaceholders, type MathSeg } from './mathExtract';
 
 /** 独立的 markdown-it 实例：开启 html 透传，关闭会「自作聪明」的排版替换。 */
 export const md: MarkdownIt = new MarkdownIt({
@@ -31,6 +31,23 @@ md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
   return self.renderToken(tokens, idx, options);
 };
 
+md.block.ruler.before('paragraph', 'tikz_diagram', (state, start, _end, silent) => {
+  const text = state.src.slice(state.bMarks[start]! + state.tShift[start]!, state.eMarks[start]!).trim();
+  if (!(state.env.diagramPlaceholders as Set<string> | undefined)?.has(text)) return false;
+  if (silent) return true;
+  const token = state.push('tikz_diagram', 'p', 0);
+  token.block = true;
+  token.content = text;
+  token.map = [start, start + 1];
+  state.line = start + 1;
+  return true;
+}, { alt: ['paragraph', 'reference', 'blockquote', 'list'] });
+
+md.renderer.rules.tikz_diagram = (tokens, index, _options, _env, renderer) => {
+  const token = tokens[index]!;
+  return '<p' + renderer.renderAttrs(token) + '>' + token.content + '</p>\n';
+};
+
 /** Map rendered Markdown blocks back to source lines, including formulas spanning multiple lines. */
 export function renderMarkdownWithSourceLines(skeleton: string, segs: MathSeg[]): string {
   const lines = [0];
@@ -42,10 +59,10 @@ export function renderMarkdownWithSourceLines(skeleton: string, segs: MathSeg[])
     }
     lines.push(lines[lines.length - 1]! + originalLines);
   }
-  const env = {};
+  const env = { diagramPlaceholders: diagramPlaceholders(segs) };
   const tokens = md.parse(skeleton, env);
   for (const token of tokens) {
-    if (token.map && token.nesting === 1 && /^(p|li|h[1-6]|blockquote|table)$/.test(token.tag)) {
+    if (token.map && (token.nesting === 1 || token.type === 'tikz_diagram') && /^(p|li|h[1-6]|blockquote|table)$/.test(token.tag)) {
       const [start, end] = token.map;
       if (lines[start] !== undefined && lines[end] !== undefined) {
         token.attrSet('data-source-lines', lines[start] + ':' + lines[end]);

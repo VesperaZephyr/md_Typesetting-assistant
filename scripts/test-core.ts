@@ -5,6 +5,7 @@ import { extractMath } from '../src/core/mathExtract';
 import { latexToMarkdown } from '../src/core/latex';
 import { md, renderMarkdownWithSourceLines } from '../src/core/markdown';
 import { sourceLocation } from '../src/core/sourceLocation';
+import { parseTikzDiagram } from '../src/core/tikzcd';
 import { buildThemeFromVisualConfig, validateTheme, BUILTIN_THEMES } from '../src/core/themes';
 
 let failed = 0;
@@ -158,6 +159,44 @@ z &= x+y \label{eq:later}
   const location = sourceLocation(latex, latex.indexOf('中文'));
   check('LaTeX 定位文本跳过公式与引用标记',
     location.line === 1 && location.probes[0] === '中文句子引用');
+}
+
+console.log('\n[TikZ-CD]');
+{
+  const source = String.raw`\begin{tikzcd}[column sep=1.5cm,ampersand replacement=\&]
+{A_{1}} \arrow[r, "f", hook] \arrow[rd, "{h_1,h_2}"', dashed] \& B \\
+C \& D \arrow[from=2-2,to=1-2, "p", two heads] \arrow[l, bend left=25, "q"{description}] \\
+\end{tikzcd}`;
+  const diagram = parseTikzDiagram(source);
+  check('保留矩阵列、箭头起止、折向和标签侧别',
+    JSON.stringify(diagram.cells) === JSON.stringify([['{A_{1}}', 'B'], ['C', 'D']])
+      && diagram.arrows[0]?.from.column === 0 && diagram.arrows[0]?.to.column === 1
+      && diagram.arrows[1]?.to.row === 1 && diagram.arrows[1]?.to.column === 1
+      && diagram.arrows[1]?.labels[0]?.side === 'swap'
+      && diagram.arrows[2]?.from.row === 1 && diagram.arrows[2]?.to.row === 0
+      && diagram.arrows[2]?.to.column === 1);
+  check('识别钩尾、双头、虚线、弯箭和居中标签',
+    diagram.arrows[0]?.tail === 'hook' && diagram.arrows[1]?.line === 'dash'
+      && diagram.arrows[2]?.head === 'double' && diagram.arrows[3]?.bend === 25
+      && diagram.arrows[3]?.labels[0]?.centered === true);
+  const markdown = '图前一段\n' + source + '\n图后一段';
+  const segments = extractMath(markdown);
+  const html = renderMarkdownWithSourceLines(segments.text, segments.segs);
+  check('连续的 Markdown 正文和交换图分为三个块，保留源码行号',
+    /<p[^>]*>图前一段<\/p>\s*<p data-source-lines="1:5">@@MATH0@@<\/p>\s*<p[^>]*>图后一段<\/p>/.test(html), html);
+  const latex = latexToMarkdown('\\[' + source + '\\]');
+  check('LaTeX 公式定界符内整张提取，原样保护 TikZ 命令',
+    latex.segs[0]?.diagram === 'tikzcd' && latex.segs[0]?.tex === source && !latex.segs[0]?.tex.includes('\\tag'));
+  const code = extractMath('```latex\n' + source + '\n```');
+  check('代码围栏内的交换图保持源码',
+    code.segs.length === 0 && extractMath('  ~~~latex\n' + source + '\n  ~~~').segs.length === 0);
+  const problem = (diagramSource: string) => {
+    try { parseTikzDiagram(diagramSource); return ''; }
+    catch (error) { return error instanceof Error ? error.message : String(error); }
+  };
+  check('未知选项和越界箭头显式报错',
+    problem(source.replace('hook', 'loop')).includes('loop')
+      && problem(source.replace('arrow[r,', 'arrow[rr,')).includes('超出矩阵'));
 }
 
 console.log('\n[主题系统]');

@@ -7,6 +7,7 @@ import {
   type BlockquoteStyleType, type TableStyleType, type StrongStyleType, type CodeThemeType,
 } from './core/themes';
 import { richCopy, textCopy } from './core/clipboard';
+import { svgToPng } from './core/mathRender';
 import { sourceLocation, type SourceLocation } from './core/sourceLocation';
 import { SAMPLE_DOC } from './sample';
 
@@ -565,6 +566,11 @@ const PREVIEW_SCROLL_SCRIPT = `<script>
     parent.postMessage({ type: 'md2-scroll', ratio: el.scrollTop / max }, '*');
   }, { passive: true });
   document.addEventListener('click', function (event) {
+    var diagram = event.target.closest && event.target.closest('button[data-save-diagram]');
+    if (diagram) {
+      parent.postMessage({ type: 'md2-save-diagram', diagramId: diagram.dataset.saveDiagram }, '*');
+      return;
+    }
     var link = event.target.closest && event.target.closest('a[href^="#latex-ref-"]');
     if (!link) return;
     var target = document.getElementById(link.getAttribute('href').slice(1));
@@ -600,7 +606,12 @@ editor.addEventListener('scroll', () => {
 // 右侧预览滚动 -> 同步左侧编辑器
 window.addEventListener('message', (ev) => {
   if (ev.source !== preview.contentWindow) return;
-  const d = ev.data as { type?: string; ratio?: number; id?: number; found?: boolean } | null;
+  const d = ev.data as { type?: string; ratio?: number; id?: number; found?: boolean; diagramId?: string } | null;
+  if (d?.type === 'md2-save-diagram' && typeof d.diagramId === 'string') {
+    const svg = lastResult?.diagramSvgs.get(d.diagramId);
+    if (svg) void saveDiagramPng(svg, d.diagramId);
+    return;
+  }
   if (d?.type === 'md2-locate-result' && d.id === locationRequest && !d.found) {
     flash(locateBtn, '未找到对应段落');
   }
@@ -610,6 +621,18 @@ window.addEventListener('message', (ev) => {
   const max = editor.scrollHeight - editor.clientHeight;
   if (max > 0) editor.scrollTop = d.ratio * max;
 });
+
+async function saveDiagramPng(svg: string, id: string) {
+  try {
+    const png = await svgToPng(svg);
+    const link = document.createElement('a');
+    link.href = png.dataUrl;
+    link.download = 'tikzcd-' + (Number(id) + 1) + '.png';
+    link.click();
+  } catch (error) {
+    flash(statsEl, error instanceof Error ? error.message : '交换图下载失败');
+  }
+}
 
 preview.addEventListener('load', () => {
   previewReady = true;
@@ -654,6 +677,7 @@ async function runConvert() {
     preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8">${PREVIEW_SCROLL_SCRIPT}<style>
       body{margin:0;padding:18px;background:#fff;}
       svg{max-width:100%;}
+      button[data-save-diagram]{margin-top:8px;padding:2px 9px;border:1px solid #8e9cb3;border-radius:4px;background:#fff;color:#334155;font:12px system-ui;cursor:pointer;}
     </style></head><body>${result.previewHtml}</body></html>`;
 
     htmlView.textContent = state.platform === 'zhihu' && state.zhihuPaste === 'plain'
@@ -661,7 +685,8 @@ async function runConvert() {
       : result.exportHtml;
 
     // 状态栏
-    statsEl.textContent = `${result.stats.chars} 字 · ${result.stats.mathCount} 个公式`;
+    statsEl.textContent = result.stats.chars + ' 字 · ' + result.stats.mathCount + ' 个公式'
+      + (result.stats.diagramCount ? ' · ' + result.stats.diagramCount + ' 张交换图' : '');
     statsEl.classList.remove('status-error');
     if (result.warnings.length) {
       warnBtn.textContent = `⚠ ${result.warnings.length} 条警告`;

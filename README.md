@@ -97,7 +97,21 @@ npm run build      # 类型检查 + 产出单文件 dist/index.html
 ## 数学公式与图表说明
 
 - 语法：`$…$`（行内）、`$$…$$` / `\[…\]` / `equation|align|gather|multline|eqnarray|alignat|flalign…`（含 `align*`、`gather*` 等全部带星号环境）；代码块中的 `$` 不会被误判
-- **tikz-cd / 交换图说明**：因本工具追求纯客户端秒开、完全离线单文件运行（免除加载 10MB+ WebAssembly TeX 宏包引擎带来的卡顿与断网失效），如果文中包含 `\begin{tikzcd}` 交换图，工具会自动保护代码并在状态栏温馨提示；推荐使用免费在线工具（如 [tikzcd.yichuanshen.de](https://tikzcd.yichuanshen.de/)）一键导出为矢量 SVG/PNG 图片插入，既高清又完美兼容微信与知乎。
+
+### TikZ-CD 交换图
+
+在 Markdown 或 LaTeX 输入中单独放置一段 `tikzcd` 环境即可预览。可以用 `\[...\]` 或 `$$...$$` 包裹，也可以直接写环境。代码围栏中的环境用来展示源码。
+
+```latex
+\begin{tikzcd}
+A \arrow[r, "f"] \arrow[d, "i"', hook] & B \arrow[d, "j"] \\
+C \arrow[r, "g"'] & D
+\end{tikzcd}
+```
+
+离线渲染支持矩阵节点、直箭和斜箭、常见双头与钩尾、虚线、弯箭、平行偏移、标签换侧和居中，以及行列间距。公众号可导出 SVG 或 PNG。预览中的「下载 PNG」可用于在知乎等平台手动上传图片。知乎纯文本保留原始 TikZ-CD 源码。
+
+复杂自定义 TikZ 样式、环形箭头和普通 `tikzpicture` 会保留源码并显示警告。
 
 ## LaTeX 子集支持范围
 
