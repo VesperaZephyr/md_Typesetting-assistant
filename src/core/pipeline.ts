@@ -4,9 +4,9 @@
  *         → 主题样式落地 → 平台整理（公众号/知乎）→ 公式标记替换 → 导出 HTML
  */
 import { md, renderMarkdownWithSourceLines } from './markdown';
-import { layoutInlineMath, styleTheoremCards, highlightReferenceIssues } from './articleLayout';
+import { layoutInlineMath, styleTheoremCards, highlightReferenceIssues, layoutProofEnds } from './articleLayout';
 import { displayMathPlaceholders, extractMath, restoreMath, type MathSeg } from './mathExtract';
-import { latexToMarkdown, expandZeroArgMacros } from './latex';
+import { latexToMarkdown, expandZeroArgMacros, PROOF_END_MARKUP } from './latex';
 import { renderTexToSvg, renderTexToPng, svgExToPx, svgToPng, MathRenderError } from './mathRender';
 import { renderTikzDiagram } from './tikzRender';
 import { applyThemeStyles, type Theme } from './themes';
@@ -223,7 +223,8 @@ async function substitute(
       return sourceLines ? markup.replace(/^<section\b/, '<section ' + sourceLines) : markup;
     });
   }
-  return html.replace(/@@MATH(\d+)@@/g, (m0, idx) => rendered.get('@@MATH' + idx + '@@') ?? m0);
+  html = html.replace(/@@MATH(\d+)@@/g, (m0, idx) => rendered.get('@@MATH' + idx + '@@') ?? m0);
+  return layoutProofEnds(html, opts.platform === 'wechat');
 }
 
 /**
@@ -322,7 +323,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   }
 
   /* ---- 纯文本（知乎 Markdown 直贴模式） ---- */
-  const plainText = restoreMath(skeleton, segs, (seg) =>
+  const plainText = restoreMath(skeleton.split(PROOF_END_MARKUP).join('∎'), segs, (seg) =>
     seg.diagram ? seg.raw : seg.display ? '$$' + seg.tex + '$$' : '$' + seg.tex + '$'
   );
 

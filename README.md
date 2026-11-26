@@ -119,7 +119,7 @@ C \arrow[r, "g"'] & D
 
 支持章节、文本强调、嵌套列表、引用块、表格、插图、代码环境、脚注和数学宏。
 
-定理类环境在预览与公众号 HTML 中使用卡片样式。证明以正文段落排版，保留标题和证毕符号。预览里，重复标签和无法解析的引用会分别标色，悬停可查看对应标签。数学稿的混排和卡片设计参考了 [markdown-mods](https://github.com/libinyam/markdown-mods)。
+定理类环境在预览与公众号 HTML 中使用卡片样式。证明以正文段落排版，保留标题，证毕符号放在末行右侧。预览里，重复标签和无法解析的引用会分别标色，悬停可查看对应标签。数学稿的混排和卡片设计参考了 [markdown-mods](https://github.com/libinyam/markdown-mods)。
 
 - `\colorbox`、`\fcolorbox` 和基础 `tcolorbox` 可保留盒内文本和列表。`tcolorbox` 支持 `title`、`colback` 和 `colframe`。
 - 支持常规定理、证明、`definition-proposition`、`definition-theorem` 和通过 `\newtheorem` 声明的环境，包括共享计数器与按章节编号。

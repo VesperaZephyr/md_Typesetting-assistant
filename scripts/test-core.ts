@@ -206,6 +206,12 @@ z &= x+y \label{eq:later}
       && html.includes('<p>' + proofText + '</p>') && (html.match(/<blockquote/g) || []).length === 1, html);
   check('普通证明保留列表、公式和单个证毕符号',
     html.includes('<ol>') && result.segs[0]?.tex === 'x=1' && (html.match(/∎/g) || []).length === 1, html);
+  const displayProof = latexToMarkdown(String.raw`\begin{proof}
+\[x=1\qedhere\]\qed
+\end{proof}`);
+  check('从行间公式取出 qedhere 并保留单个证毕符号',
+    displayProof.segs[0]?.tex === 'x=1' && (displayProof.markdown.match(/∎/g) || []).length === 1
+      && /@@MATH0@@\s*\n\n\s*<span data-proof-end/.test(displayProof.markdown), displayProof.markdown);
 }
 
 console.log('\n[TikZ-CD]');

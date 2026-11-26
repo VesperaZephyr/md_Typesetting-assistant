@@ -38,6 +38,7 @@ export function stripClasses(
     }
     if (!anchors.has(el.id)) el.removeAttribute('id');
     for (const name of Array.from(el.attributes)) {
+      if (name.name === 'data-proof-end') continue;
       if (keep.keepSourceLines && name.name === 'data-source-lines') continue;
       if (name.name.startsWith('data-') || name.name.startsWith('aria-')) el.removeAttribute(name.name);
     }

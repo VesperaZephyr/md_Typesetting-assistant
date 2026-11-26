@@ -85,3 +85,49 @@ export function highlightReferenceIssues(root: DocumentFragment) {
     ref.style.padding = '0 0.2em';
   }
 }
+
+function lastProofBlock(block: Element | null): Element | null {
+  while (block && /^(OL|UL|LI|BLOCKQUOTE|DIV)$/.test(block.tagName)) {
+    const child = block.lastElementChild;
+    if (!child) break;
+    if (block.tagName === 'LI' && (!/^(P|OL|UL|SECTION|DIV|BLOCKQUOTE)$/.test(child.tagName)
+      || child.nextSibling?.textContent?.trim())) break;
+    block = child;
+  }
+  return block;
+}
+
+/** Run after math substitution so a terminal display can share its row with the proof symbol. */
+export function layoutProofEnds(html: string, alignRight: boolean): string {
+  if (!html.includes('data-proof-end')) return html;
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  for (const marker of template.content.querySelectorAll<HTMLElement>('span[data-proof-end]')) {
+    marker.removeAttribute('data-proof-end');
+    const paragraph = marker.parentElement;
+    const separate = paragraph?.tagName === 'P' && Array.from(paragraph.childNodes).every(
+      (node) => node === marker || (node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()));
+    if (alignRight) {
+      marker.style.cssText = 'float:right;margin-left:0.65em;white-space:nowrap;';
+    }
+    if (!separate) continue;
+    const previous = lastProofBlock(paragraph.previousElementSibling) as HTMLElement | null;
+    if (previous && /^(P|LI)$/.test(previous.tagName)) {
+      if (!alignRight) previous.append(' ');
+      previous.append(marker);
+      paragraph.remove();
+    } else if (alignRight && previous?.tagName === 'SECTION'
+      && previous.querySelector(':scope > svg, :scope > img')) {
+      previous.style.position = 'relative';
+      previous.style.paddingLeft = '1.5em';
+      previous.style.paddingRight = '1.5em';
+      marker.style.cssText = 'position:absolute;right:0;bottom:0;white-space:nowrap;';
+      previous.append(marker);
+      paragraph.remove();
+    } else if (alignRight) {
+      paragraph.style.textAlign = 'right';
+      marker.style.removeProperty('float');
+    }
+  }
+  return template.innerHTML;
+}

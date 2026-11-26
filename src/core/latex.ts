@@ -9,6 +9,8 @@
 import { extractMath, type MathSeg } from './mathExtract';
 import { escapeAttr } from './exporters';
 
+export const PROOF_END_MARKUP = '<span data-proof-end="">∎</span>';
+
 export interface LatexResult {
   markdown: string;
   segs: MathSeg[];
@@ -266,7 +268,7 @@ export function latexToMarkdown(src: string): LatexResult {
   s = replaceCmd(s, 'mbox', (x) => x);
   s = replaceCmd(s, 'text', (x) => x);
   /* 6. 环境转换 */
-  s = convertBlocks(s, theorems, warnings);
+  s = convertBlocks(s, theorems, segs, warnings);
   s = convertColorBoxes(s, warnings);
   s = convertTableEnvs(s);
   s = convertTables(s, warnings);
@@ -564,7 +566,25 @@ function finishReferences(s: string, segs: MathSeg[], refs: Map<string, Referenc
   return result;
 }
 
-function convertBlocks(s: string, theorems: Map<string, Theorem>, warnings: string[]): string {
+function finishProof(body: string, segs: MathSeg[]): string {
+  let explicit = false;
+  const proof = body.trim().replace(/(?:\\hfill\s*)?\\qed(?:here|symbol)?\b/g, () => {
+    explicit = true;
+    return PROOF_END_MARKUP;
+  }).replace(/@@MATH(\d+)@@/g, (placeholder, index: string, offset: number, text: string) => {
+    const seg = segs[Number(index)];
+    if (!seg || seg.diagram) return placeholder;
+    const followedByEnd = text.slice(offset + placeholder.length).trimStart().startsWith(PROOF_END_MARKUP);
+    if (!/\\qedhere\b/.test(seg.tex)) return seg.display && followedByEnd ? placeholder + '\n\n' : placeholder;
+    seg.tex = seg.tex.replace(/\\qedhere\b/g, '');
+    explicit = true;
+    if (followedByEnd) return seg.display ? placeholder + '\n\n' : placeholder;
+    return seg.display ? placeholder + '\n\n' + PROOF_END_MARKUP + '\n\n' : placeholder + ' ' + PROOF_END_MARKUP;
+  });
+  return explicit ? proof : proof + '\n\n' + PROOF_END_MARKUP;
+}
+
+function convertBlocks(s: string, theorems: Map<string, Theorem>, segs: MathSeg[], warnings: string[]): string {
   while (true) {
     const stack: { env: string; start: number; end: number; options: string }[] = [];
     let converted = false;
@@ -583,8 +603,7 @@ function convertBlocks(s: string, theorems: Map<string, Theorem>, warnings: stri
       else if (theorem) {
         const kind = theoremKind(env, theorem.title);
         if (kind === 'proof') {
-          body = body.trim();
-          if (!/\\qed(?:here|symbol)?\b/.test(body)) body += '\n\n∎';
+          body = finishProof(body, segs);
         } else {
           body = '<blockquote data-latex-theorem="' + kind + '">\n\n' + body.trim() + '\n\n</blockquote>';
         }
