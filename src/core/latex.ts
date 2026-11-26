@@ -263,6 +263,12 @@ export function latexToMarkdown(src: string): LatexResult {
 
   /* 5. 文本命令改写（注意顺序：长命令在前，\text 兜底在后） */
   s = resolveReferences(s, segs, theorems, equationWithin, enumerateDefaults, warnings);
+  const footnotes: string[] = [];
+  s = replaceCmd(s, 'footnote', (note) => {
+    footnotes.push(note.trim().replace(/\n/g, '\n    '));
+    return '[^latex-note-' + footnotes.length + ']';
+  });
+  if (footnotes.length) s += '\n\n' + footnotes.map((note, index) => '[^latex-note-' + (index + 1) + ']: ' + note).join('\n');
   s = processHref(s);
   s = replaceCmd(s, 'url', (x) => x);
   s = replaceCmd(s, 'textbf', (x) => `**${x.trim()}**`);
@@ -273,9 +279,9 @@ export function latexToMarkdown(src: string): LatexResult {
   s = replaceCmd(s, 'textsf', (x) => x);
   s = replaceCmd(s, 'textnormal', (x) => x);
   s = replaceCmd(s, 'underline', (x) => `<u>${x}</u>`);
+  s = replaceCmd(s, 'sout', (x) => '<s>' + x.trim() + '</s>');
   s = replaceCmd(s, 'emph', (x) => `*${x.trim()}*`);
   s = replaceCmd(s, 'textsuperscript', (x) => `<sup>${x}</sup>`);
-  s = replaceCmd(s, 'footnote', (x) => `（${x.trim()}）`);
   s = replaceCmd(s, 'cite', (x) => `[${x.trim()}]`);
   s = replaceCmd(s, 'mbox', (x) => x);
   s = replaceCmd(s, 'text', (x) => x);

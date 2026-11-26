@@ -5,6 +5,7 @@ import { extractMath } from '../src/core/mathExtract';
 import { latexToMarkdown } from '../src/core/latex';
 import { md, renderMarkdownWithSourceLines } from '../src/core/markdown';
 import { sourceLocation } from '../src/core/sourceLocation';
+import { findText, formatSelection, insertFootnote, replaceAllText } from '../src/core/editorTools';
 import { parseTikzDiagram } from '../src/core/tikzcd';
 import { buildThemeFromVisualConfig, validateTheme, BUILTIN_THEMES } from '../src/core/themes';
 
@@ -282,6 +283,32 @@ C \& D \arrow[from=2-2,to=1-2, "p", two heads] \arrow[l, bend left=25, "q"{descr
   check('未知选项和越界箭头显式报错',
     problem(source.replace('hook', 'loop')).includes('loop')
       && problem(source.replace('arrow[r,', 'arrow[rr,')).includes('超出矩阵'));
+}
+
+console.log('\n[编辑工具]');
+{
+  const source = '选择这里\n第二行';
+  check('同一选区可按 Markdown 或 LaTeX 规则加粗',
+    formatSelection(source, 0, 2, 'bold', 'markdown').text === '**选择**'
+      && formatSelection(source, 0, 2, 'bold', 'latex').text === '\\textbf{选择}');
+  check('选区引用按整行处理，LaTeX 删除线进入排版',
+    formatSelection(source, 1, source.length, 'quote', 'markdown').text === '> 选择这里\n> 第二行'
+      && md.render(latexToMarkdown('\\sout{去掉}').markdown).includes('<s>去掉</s>'));
+  const note = insertFootnote('正文[^1]\n\n[^1]: 第一条', 2, '第二条\n续行', 'markdown');
+  const noteSource = '正文'.slice(0, note.start) + note.text;
+  const html = md.render(noteSource);
+  check('Markdown 脚注分配独立编号，文末保留跨行内容',
+    note.text.startsWith('[^2]') && html.includes('href="#latex-ref-footnote-1"') && html.includes('第二条\n续行'));
+  const latex = md.render(latexToMarkdown(String.raw`句子\footnote{见 \textbf{论文}。}。`).markdown);
+  check('LaTeX 脚注保留文末来源和原有内联格式',
+    latex.includes('href="#latex-ref-footnote-1"') && latex.includes('见 <strong>论文</strong>。'));
+  check('脚注语法在行内代码中保持原文',
+    md.render('`[^1]`\n\n[^1]: 请忽略。').includes('<code>[^1]</code>')
+      && !md.render('`[^1]`\n\n[^1]: 请忽略。').includes('latex-ref-footnote'));
+  check('查找按字面匹配并可区分大小写，替换文本不展开 $',
+    findText('A. a. A!', 'a.', false).length === 2
+      && findText('A. a. A!', 'a.', true).length === 1
+      && replaceAllText('x+x', '+', '$&', false) === 'x$&x');
 }
 
 console.log('\n[主题系统]');

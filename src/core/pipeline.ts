@@ -29,6 +29,7 @@ export interface ConvertOptions {
   wechatLinkFootnotes?: boolean;
   /** 知乎：把正文里的 h1 降级为 h2（文章标题通常填在知乎标题栏） */
   zhihuDemoteH1?: boolean;
+  isCurrent?: () => boolean;
 }
 
 export interface ConvertResult {
@@ -166,6 +167,21 @@ function warnLocalImages(html: string, warnings: string[]): void {
   }
 }
 
+function conversionCheckpoint(isCurrent?: () => boolean) {
+  let deadline = performance.now() + 12;
+  const check = () => {
+    if (isCurrent?.() === false) throw new DOMException('转换已更新', 'AbortError');
+  };
+  return () => {
+    check();
+    if (performance.now() < deadline) return undefined;
+    return new Promise<void>((resolve) => setTimeout(resolve, 0)).then(() => {
+      check();
+      deadline = performance.now() + 12;
+    });
+  };
+}
+
 /** 把骨架里的占位符替换成平台公式标记 */
 async function substitute(
   skeletonHtml: string,
@@ -174,6 +190,7 @@ async function substitute(
   preamble: string,
   warnings: string[],
   diagramCache: Map<string, string>,
+  checkpoint: ReturnType<typeof conversionCheckpoint>,
   downloadable?: Map<string, string>,
 ): Promise<string> {
   const cache = new Map<string, string>();
@@ -207,6 +224,8 @@ async function substitute(
   // 先异步预渲染所有占位符，再做同步替换（replace 回调不能是 async）
   const rendered = new Map<string, string>();
   for (let i = 0; i < segs.length; i++) {
+    const pause = checkpoint();
+    if (pause) await pause;
     rendered.set('@@MATH' + i + '@@', await renderOne(segs[i]!));
   }
 
@@ -231,6 +250,7 @@ async function substitute(
  * 主入口。
  */
 export async function convert(source: string, opts: ConvertOptions): Promise<ConvertResult> {
+  const checkpoint = conversionCheckpoint(opts.isCurrent);
   const warnings: string[] = [];
   let skeleton = source;
   let segs: MathSeg[] = [];
@@ -256,6 +276,8 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   const diagramCache = new Map<string, string>();
   const diagramSvgs = new Map<string, string>();
   warnLocalImages(baseHtml, warnings);
+  const afterParsing = checkpoint();
+  if (afterParsing) await afterParsing;
 
   /* ---- 视觉预览：主题 + SVG 公式，与平台无关 ---- */
   const previewTpl = document.createElement('template');
@@ -265,6 +287,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   warnings.push(...themeWarnings);
   layoutInlineMath(previewTpl.content, segs);
   styleTheoremCards(previewTpl.content);
+  const wechatTpl = opts.platform === 'wechat' ? previewTpl.cloneNode(true) as HTMLTemplateElement : undefined;
   highlightReferenceIssues(previewTpl.content);
   stripClasses(previewTpl.content, { keepSourceLines: true });
   if (opts.platform === 'wechat' && opts.wechatLinkFootnotes) {
@@ -276,23 +299,20 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   const previewSkeletonHtml = previewWrap.outerHTML;
   let previewHtml: string;
   try {
-    previewHtml = await substitute(previewSkeletonHtml, segs, { ...opts, platform: 'wechat', wechatMath: 'svg' }, preamble, warnings, diagramCache, diagramSvgs);
+    previewHtml = await substitute(previewSkeletonHtml, segs, { ...opts, platform: 'wechat', wechatMath: 'svg' }, preamble, warnings, diagramCache, checkpoint, diagramSvgs);
   } catch {
     previewHtml = previewSkeletonHtml;
   }
+  const afterPreview = checkpoint();
+  if (afterPreview) await afterPreview;
 
   /* ---- 导出 HTML：随平台变化 ---- */
   let exportHtml: string;
-  if (opts.platform === 'wechat') {
-    const tpl = document.createElement('template');
-    tpl.innerHTML = baseHtml;
+  if (wechatTpl) {
+    const tpl = wechatTpl;
     if (tpl.content.querySelector('a[href^="#latex-ref-"]')) {
       warnings.push('公众号手机预览中的文内锚点不能可靠跳转，复制到公众号时会保留引用编号。排版助手预览和下载的 HTML 可点击跳转。');
     }
-    inlineHljsColors(tpl.content, opts.theme);
-    applyThemeStyles(tpl.content, opts.theme);
-    layoutInlineMath(tpl.content, segs);
-    styleTheoremCards(tpl.content);
     stripClasses(tpl.content);
     if (opts.wechatLinkFootnotes) {
       applyLinkFootnotes(tpl.content, warnings);
@@ -300,7 +320,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
     const wrap = document.createElement('section');
     wrap.setAttribute('style', opts.theme.styles['root'] || '');
     wrap.append(...Array.from(tpl.content.childNodes));
-    exportHtml = await substitute(wrap.outerHTML, segs, opts, preamble, warnings, diagramCache);
+    exportHtml = await substitute(wrap.outerHTML, segs, opts, preamble, warnings, diagramCache, checkpoint);
   } else {
     const tpl = document.createElement('template');
     tpl.innerHTML = baseHtml;
@@ -319,7 +339,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
       }
       return { ...seg, tex };
     });
-    exportHtml = await substitute(tpl.innerHTML, expandedSegs, opts, preamble, warnings, diagramCache);
+    exportHtml = await substitute(tpl.innerHTML, expandedSegs, opts, preamble, warnings, diagramCache, checkpoint);
     if (segs.some((seg) => seg.diagram === 'tikzcd')) {
       warnings.push('知乎富文本中的 TikZ-CD 图使用嵌入 PNG。若粘贴时图片被过滤，请在目标编辑器上传交换图图片。');
     }

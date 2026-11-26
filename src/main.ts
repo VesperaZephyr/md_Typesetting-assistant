@@ -8,8 +8,10 @@ import {
 } from './core/themes';
 import { richCopy, textCopy } from './core/clipboard';
 import { wechatClipboardHtml } from './core/exporters';
+import { findText, formatSelection, insertFootnote, replaceAllText, type TextEdit, type TextFormat, type TextMatch } from './core/editorTools';
 import { svgToPng } from './core/mathRender';
-import { sourceLocation, type SourceLocation } from './core/sourceLocation';
+import { sourceLocation, sourceSyncMap, type SourceLocation } from './core/sourceLocation';
+import { createEditorScroll } from './core/editorScroll';
 import { SAMPLE_DOC } from './sample';
 
 /* ------------------------------------------------------------------ */
@@ -97,6 +99,8 @@ function loadState(): AppState {
 }
 
 const state = loadState();
+let saveTimer: number | undefined;
+let pendingSourceSave = false;
 
 function articlesWithCurrent() {
   const active = snapshotArticle(state);
@@ -115,6 +119,8 @@ function persistState(next: AppState): boolean {
     if (raw !== storedState) localStorage.setItem(LS_KEY, raw);
     storedState = raw;
     Object.assign(state, next);
+    window.clearTimeout(saveTimer);
+    pendingSourceSave = false;
     showSaveStatus('已保存到此浏览器');
     return true;
   } catch {
@@ -126,6 +132,16 @@ function persistState(next: AppState): boolean {
 function saveState() {
   persistState({ ...state, articles: articlesWithCurrent() });
 }
+
+function scheduleSourceSave() {
+  pendingSourceSave = true;
+  window.clearTimeout(saveTimer);
+  saveTimer = window.setTimeout(saveState, 350);
+}
+
+window.addEventListener('pagehide', () => {
+  if (pendingSourceSave) saveState();
+});
 
 function allThemes(): Theme[] {
   return [...BUILTIN_THEMES, ...Object.values(state.customThemes)];
@@ -203,6 +219,30 @@ app.innerHTML = `
       <input id="articleTitle" class="article-title" aria-label="文章标题" placeholder="未命名文章" maxlength="120">
       <span class="pane-head-hint" id="inputHint"></span>
     </div>
+    <div id="editorTools" class="editor-tools" role="toolbar" aria-label="正文格式">
+      <button type="button" class="pane-btn" data-format-action="bold">加粗</button>
+      <button type="button" class="pane-btn" data-format-action="italic">斜体</button>
+      <button type="button" class="pane-btn" data-format-action="underline">下划线</button>
+      <button type="button" class="pane-btn" data-format-action="strike">删除线</button>
+      <button type="button" class="pane-btn" data-format-action="quote">引用</button>
+      <button type="button" class="pane-btn" data-format-action="footnote">脚注</button>
+      <button type="button" class="pane-btn" id="findBtn" aria-controls="findPanel" aria-expanded="false" aria-keyshortcuts="Control+F Control+H">查找替换</button>
+    </div>
+    <div id="findPanel" class="find-panel hidden" aria-label="查找和替换">
+      <div class="find-row">
+        <input id="findQuery" type="search" aria-label="查找内容" placeholder="查找">
+        <button type="button" class="pane-btn" id="findPrevious" title="上一个匹配" aria-label="上一个匹配">↑</button>
+        <button type="button" class="pane-btn" id="findNext" title="下一个匹配" aria-label="下一个匹配">↓</button>
+        <label class="pane-check"><input type="checkbox" id="findCase"> 区分大小写</label>
+        <button type="button" class="pane-btn" id="findClose" aria-label="关闭查找">关闭</button>
+      </div>
+      <div class="find-row">
+        <input id="replaceQuery" type="text" aria-label="替换为" placeholder="替换为">
+        <button type="button" class="pane-btn" id="replaceOne">替换</button>
+        <button type="button" class="pane-btn" id="replaceAll">全部替换</button>
+        <span id="findStatus" role="status"></span>
+      </div>
+    </div>
     <textarea id="editor" spellcheck="false" placeholder="在此粘贴 Markdown 或 LaTeX……"></textarea>
     <div id="articleSaveStatus" class="statusbar" role="status"></div>
   </section>
@@ -239,6 +279,17 @@ app.innerHTML = `
     </div>
   </section>
 </main>
+
+<dialog id="footnoteDialog" class="articles-dialog" aria-labelledby="footnoteTitle">
+  <div class="modal-head"><span id="footnoteTitle">添加脚注</span></div>
+  <form id="footnoteForm" class="modal-body footnote-form">
+    <textarea id="footnoteText" aria-label="脚注内容" rows="3" required placeholder="填写注释或参考文献" autofocus></textarea>
+    <div class="footnote-actions">
+      <button id="footnoteCancel" type="button" class="btn ghost">取消</button>
+      <button type="submit" class="btn primary">插入脚注</button>
+    </div>
+  </form>
+</dialog>
 
 <!-- 主题抽屉：编辑主题时右侧预览始终可见 -->
 <div id="themeModal" class="theme-drawer hidden">
@@ -462,6 +513,7 @@ app.innerHTML = `
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string) => app.querySelector(sel) as T;
 const editor = $<HTMLTextAreaElement>('#editor');
+const editorScroll = createEditorScroll(editor, () => state.content);
 const preview = $<HTMLIFrameElement>('#preview');
 const htmlView = $<HTMLElement>('#htmlView');
 const themeSel = $<HTMLSelectElement>('#theme');
@@ -498,6 +550,13 @@ let previewRevision = -1;
 let previewArticleId: string | undefined;
 let locationRequest = 0;
 let pendingLocation: (SourceLocation & { id: number }) | null = null;
+
+function revealSourceOffset(offset: number) {
+  const top = editorScroll.topAtOffset(offset);
+  if (top < editor.scrollTop || top > editor.scrollTop + editor.clientHeight - 40) {
+    editor.scrollTop = Math.max(0, top - editor.clientHeight * 0.25);
+  }
+}
 
 interface ScrollPosition { editor: number; preview: number }
 const scrollPositions = new Map<string, ScrollPosition>();
@@ -537,7 +596,77 @@ const PREVIEW_SCROLL_SCRIPT = `<script>
   var lock = false;
   var unlockTimer;
   var revision = Number(document.documentElement.dataset.previewRevision);
+  var navigation;
+  var anchors;
+  var measuredWidth;
+  var measuredHeight;
   function scroller() { return document.scrollingElement || document.documentElement || document.body; }
+  function buildAnchors() {
+    var el = scroller();
+    if (anchors && measuredWidth === innerWidth && measuredHeight === el.scrollHeight) return anchors;
+    measuredWidth = innerWidth;
+    measuredHeight = el.scrollHeight;
+    if (!navigation) {
+      var raw = document.getElementById('md2-source-sync');
+      navigation = raw ? JSON.parse(raw.textContent) : { count: 0, probes: [] };
+    }
+    var points = [];
+    function add(line, element) {
+      points.push([line, element.getBoundingClientRect().top + el.scrollTop]);
+    }
+    document.querySelectorAll('[data-source-lines]').forEach(function (element) {
+      var line = Number(element.getAttribute('data-source-lines').split(':')[0]);
+      if (Number.isFinite(line)) add(line, element);
+    });
+    if (!points.length && navigation.probes.length) {
+      var byPrefix = new Map();
+      document.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li').forEach(function (node, index) {
+        var text = node.textContent.replace(/[^\\p{L}\\p{N}]+/gu, '').toLowerCase();
+        if (text.length < 4) return;
+        var key = text.slice(0, 4);
+        if (!byPrefix.has(key)) byPrefix.set(key, []);
+        byPrefix.get(key).push({ index: index, node: node, text: text });
+      });
+      var previous = -1;
+      var offsets = new Map();
+      navigation.probes.forEach(function (probe) {
+        var key = probe[1].slice(0, 4);
+        var choices = byPrefix.get(key);
+        if (!choices) return;
+        var i = offsets.get(key) || 0;
+        while (i < choices.length && choices[i].index <= previous) i++;
+        var candidate = choices[i];
+        if (candidate && candidate.text.startsWith(probe[1])) {
+          add(probe[0], candidate.node);
+          previous = candidate.index;
+          i++;
+        }
+        offsets.set(key, i);
+      });
+    }
+    if (!points.length) return anchors = [];
+    anchors = [[0, 0]];
+    points.sort(function (a, b) { return a[0] - b[0] || a[1] - b[1]; });
+    points.forEach(function (point) {
+      var last = anchors[anchors.length - 1];
+      if (point[0] > last[0] && point[1] > last[1]) anchors.push(point);
+    });
+    anchors.push([navigation.count, measuredHeight]);
+    return anchors;
+  }
+  function mappedPosition(value, axis) {
+    var points = buildAnchors();
+    if (points.length < 3) return null;
+    var low = 0, high = points.length - 1;
+    while (low + 1 < high) {
+      var middle = (low + high) >>> 1;
+      if (points[middle][axis] <= value) low = middle;
+      else high = middle;
+    }
+    var a = points[low], b = points[high], other = 1 - axis;
+    var ratio = Math.max(0, Math.min(1, (value - a[axis]) / Math.max(1, b[axis] - a[axis])));
+    return a[other] + ratio * (b[other] - a[other]);
+  }
   function programmaticScroll() {
     lock = true;
     clearTimeout(unlockTimer);
@@ -547,7 +676,8 @@ const PREVIEW_SCROLL_SCRIPT = `<script>
     var el = scroller();
     var max = el.scrollHeight - el.clientHeight;
     parent.postMessage({ type: 'md2-scroll', revision: revision, top: el.scrollTop,
-      ratio: max > 0 ? el.scrollTop / max : 0, sync: !lock }, '*');
+      ratio: max > 0 ? el.scrollTop / max : 0,
+      line: !lock && max > 0 ? mappedPosition(el.scrollTop, 1) : null, sync: !lock }, '*');
   }
   document.addEventListener('DOMContentLoaded', function () {
     var initialTop = Number(document.documentElement.dataset.previewTop);
@@ -605,8 +735,13 @@ const PREVIEW_SCROLL_SCRIPT = `<script>
     var el = scroller();
     programmaticScroll();
     var max = Math.max(0, el.scrollHeight - el.clientHeight);
-    el.scrollTop = d.type === 'md2-restore-scroll' ? Math.min(max, Math.max(0, Number(d.top) || 0))
-      : Math.max(0, Math.min(1, Number(d.ratio) || 0)) * max;
+    if (d.type === 'md2-restore-scroll') {
+      el.scrollTop = Math.min(max, Math.max(0, Number(d.top) || 0));
+    } else {
+      var ratio = Math.max(0, Math.min(1, Number(d.ratio) || 0));
+      var mapped = ratio > 0 && ratio < 0.999 && typeof d.line === 'number' ? mappedPosition(d.line, 0) : null;
+      el.scrollTop = mapped === null ? ratio * max : Math.min(max, mapped);
+    }
     reportScroll();
   });
   document.addEventListener('scroll', reportScroll, { passive: true });
@@ -627,10 +762,11 @@ const PREVIEW_SCROLL_SCRIPT = `<script>
 // 左侧编辑器滚动 -> 同步右侧预览
 function syncPreviewScroll() {
   if (!state.syncScroll || !previewReady || activeTab !== 'preview'
-    || previewArticleId !== state.activeArticleId) return;
+    || previewArticleId !== state.activeArticleId || resultRevision !== conversionRevision) return;
   const max = editor.scrollHeight - editor.clientHeight;
   const ratio = max > 0 ? editor.scrollTop / max : 0;
-  preview.contentWindow?.postMessage({ type: 'md2-scroll-to', revision: previewRevision, ratio }, '*');
+  const line = ratio > 0 && ratio < 0.999 ? editorScroll.lineAtTop(editor.scrollTop) : undefined;
+  preview.contentWindow?.postMessage({ type: 'md2-scroll-to', revision: previewRevision, ratio, line }, '*');
 }
 
 function restorePreviewScroll() {
@@ -664,7 +800,7 @@ editor.addEventListener('scroll', () => {
 window.addEventListener('message', (ev) => {
   if (ev.source !== preview.contentWindow) return;
   const d = ev.data as {
-    type?: string; ratio?: number; top?: number; sync?: boolean; revision?: number;
+    type?: string; ratio?: number; top?: number; line?: number; sync?: boolean; revision?: number;
     id?: number; found?: boolean; diagramId?: string;
   } | null;
   if (d?.type === 'md2-save-diagram' && typeof d.diagramId === 'string') {
@@ -678,10 +814,12 @@ window.addEventListener('message', (ev) => {
   if (!d || d.type !== 'md2-scroll' || d.revision !== previewRevision || !previewReady
     || activeTab !== 'preview' || previewArticleId !== state.activeArticleId) return;
   if (typeof d.top === 'number') rememberScroll('preview', d.top);
-  if (!state.syncScroll || !d.sync || typeof d.ratio !== 'number' || !Number.isFinite(d.ratio)) return;
+  if (!state.syncScroll || !d.sync || resultRevision !== conversionRevision
+    || typeof d.ratio !== 'number' || !Number.isFinite(d.ratio)) return;
   previewScrollLockUntil = Date.now() + 120;
   const max = editor.scrollHeight - editor.clientHeight;
-  if (max > 0) editor.scrollTop = d.ratio * max;
+  if (max > 0) editor.scrollTop = d.ratio > 0 && d.ratio < 0.999 && typeof d.line === 'number' && Number.isFinite(d.line)
+    ? editorScroll.topAtLine(d.line) : d.ratio * max;
 });
 
 async function saveDiagramPng(svg: string, id: string) {
@@ -712,6 +850,13 @@ let conversionRevision = 0;
 let runningRevision = -1;
 let resultRevision = -1;
 
+function showExportSource() {
+  if (!lastResult) return;
+  htmlView.textContent = state.platform === 'zhihu' && state.zhihuPaste === 'plain'
+    ? lastResult.plainText
+    : lastResult.exportHtml;
+}
+
 async function runConvert() {
   window.clearTimeout(convertTimer);
   const revision = ++conversionRevision;
@@ -727,6 +872,7 @@ async function runConvert() {
       zhihuMath: state.zhihuMath,
       wechatLinkFootnotes: state.wechatLinkFootnotes,
       zhihuDemoteH1: state.zhihuDemoteH1,
+      isCurrent: () => revision === conversionRevision,
     });
     if (revision !== conversionRevision) return;
     const replacePreview = result.previewHtml !== lastResult?.previewHtml || previewArticleId !== state.activeArticleId;
@@ -741,7 +887,8 @@ async function runConvert() {
       previewNeedsRestore = true;
       previewRevision = revision;
       previewArticleId = state.activeArticleId;
-      preview.srcdoc = `<!doctype html><html data-preview-revision="${revision}" data-preview-top="${articleScrollPosition().preview}"><head><meta charset="utf-8">${PREVIEW_SCROLL_SCRIPT}<style>
+      const sourceMap = JSON.stringify(sourceSyncMap(state.content, state.inputFormat === 'latex'));
+      preview.srcdoc = `<!doctype html><html data-preview-revision="${revision}" data-preview-top="${articleScrollPosition().preview}"><head><meta charset="utf-8"><script type="application/json" id="md2-source-sync">${sourceMap}</script>${PREVIEW_SCROLL_SCRIPT}<style>
       body{margin:0;padding:18px;background:#fff;}
       svg{max-width:100%;}
       button[data-save-diagram]{margin-top:8px;padding:2px 9px;border:1px solid #8e9cb3;border-radius:4px;background:#fff;color:#334155;font:12px system-ui;cursor:pointer;}
@@ -750,9 +897,7 @@ async function runConvert() {
       locateInPreview();
     }
 
-    htmlView.textContent = state.platform === 'zhihu' && state.zhihuPaste === 'plain'
-      ? result.plainText
-      : result.exportHtml;
+    if (activeTab === 'html') showExportSource();
 
     // 状态栏
     statsEl.textContent = result.stats.chars + ' 字 · ' + result.stats.mathCount + ' 个公式'
@@ -836,6 +981,156 @@ function syncControls() {
 /* 事件绑定                                                            */
 /* ------------------------------------------------------------------ */
 
+function applyEditorEdit(edit: TextEdit) {
+  editor.focus({ preventScroll: true });
+  editor.setSelectionRange(edit.start, edit.end);
+  const previous = editor.value;
+  // Use the native editing operation where available so Ctrl+Z can undo a toolbar action.
+  let delivered = false;
+  const markInput = () => { delivered = true; };
+  editor.addEventListener('input', markInput, { once: true });
+  try { document.execCommand('insertText', false, edit.text); } catch { /* fall back below */ }
+  editor.removeEventListener('input', markInput);
+  if (editor.value === previous && previous.slice(edit.start, edit.end) !== edit.text) {
+    editor.setRangeText(edit.text, edit.start, edit.end, 'end');
+  }
+  editor.setSelectionRange(edit.selectionStart, edit.selectionEnd);
+  if (!delivered && editor.value !== previous) editor.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+const noteDialog = $<HTMLDialogElement>('#footnoteDialog');
+const noteText = $<HTMLTextAreaElement>('#footnoteText');
+let noteOffset = 0;
+
+$('#editorTools').addEventListener('mousedown', (event) => {
+  if ((event.target as HTMLElement).closest('[data-format-action]')) event.preventDefault();
+});
+$('#editorTools').addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>('[data-format-action]');
+  const action = button?.dataset.formatAction;
+  if (!action) return;
+  if (action === 'footnote') {
+    noteOffset = editor.selectionEnd;
+    noteText.value = '';
+    noteDialog.showModal();
+    return;
+  }
+  applyEditorEdit(formatSelection(editor.value, editor.selectionStart, editor.selectionEnd, action as TextFormat, state.inputFormat));
+});
+$('#footnoteCancel').addEventListener('click', () => noteDialog.close());
+$('#footnoteForm').addEventListener('submit', (event) => {
+  event.preventDefault();
+  if (!noteText.value.trim()) { noteText.focus(); return; }
+  noteDialog.close();
+  applyEditorEdit(insertFootnote(editor.value, noteOffset, noteText.value, state.inputFormat));
+});
+
+const findPanel = $('#findPanel');
+const findQuery = $<HTMLInputElement>('#findQuery');
+const replaceQuery = $<HTMLInputElement>('#replaceQuery');
+const findCase = $<HTMLInputElement>('#findCase');
+const findStatus = $('#findStatus');
+let findTimer: number | undefined;
+let findCache: { source: string; query: string; matchCase: boolean; matches: TextMatch[] } | undefined;
+
+function currentMatches(): TextMatch[] {
+  const source = editor.value;
+  const query = findQuery.value;
+  const matchCase = findCase.checked;
+  if (findCache?.source === source && findCache.query === query && findCache.matchCase === matchCase) return findCache.matches;
+  const matches = findText(source, query, matchCase);
+  findCache = { source, query, matchCase, matches };
+  return matches;
+}
+
+function showMatchStatus(matches: TextMatch[]) {
+  if (!findQuery.value) { findStatus.textContent = ''; return; }
+  if (!matches.length) { findStatus.textContent = '无匹配'; return; }
+  const active = matches.findIndex((match) => match.start === editor.selectionStart && match.end === editor.selectionEnd);
+  findStatus.textContent = active >= 0 ? (active + 1) + ' / ' + matches.length : matches.length + ' 处匹配';
+}
+
+function selectMatch(match: TextMatch) {
+  editor.setSelectionRange(match.start, match.end);
+  revealSourceOffset(match.start);
+}
+
+function moveMatch(backward = false, includeCurrent = false) {
+  window.clearTimeout(findTimer);
+  const matches = currentMatches();
+  if (matches.length) {
+    const offset = editor.selectionStart;
+    let match = matches.find((entry) => includeCurrent ? entry.start >= offset : entry.start > offset) ?? matches[0];
+    if (backward) {
+      match = matches[matches.length - 1];
+      for (let i = matches.length - 1; i >= 0; i--) {
+        if (matches[i]!.start < offset) { match = matches[i]; break; }
+      }
+    }
+    if (match) selectMatch(match);
+  }
+  showMatchStatus(matches);
+}
+
+function openFind() {
+  const selected = editor.value.slice(editor.selectionStart, editor.selectionEnd);
+  if (findPanel.classList.contains('hidden') && selected && !selected.includes('\n') && selected.length <= 300) {
+    findQuery.value = selected;
+  }
+  findPanel.classList.remove('hidden');
+  $('#findBtn').setAttribute('aria-expanded', 'true');
+  showMatchStatus(currentMatches());
+  findQuery.focus();
+  findQuery.select();
+}
+
+function closeFind() {
+  window.clearTimeout(findTimer);
+  findCache = undefined;
+  findPanel.classList.add('hidden');
+  $('#findBtn').setAttribute('aria-expanded', 'false');
+  editor.focus({ preventScroll: true });
+}
+
+$('#findBtn').addEventListener('click', openFind);
+$('#findClose').addEventListener('click', closeFind);
+$('#findNext').addEventListener('click', () => moveMatch());
+$('#findPrevious').addEventListener('click', () => moveMatch(true));
+findQuery.addEventListener('input', () => {
+  window.clearTimeout(findTimer);
+  findTimer = window.setTimeout(() => moveMatch(false, true), 120);
+});
+findCase.addEventListener('change', () => moveMatch(false, true));
+findPanel.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') { event.stopPropagation(); closeFind(); }
+  if (event.key === 'Enter' && (event.target === findQuery || event.target === replaceQuery)) {
+    event.preventDefault();
+    if (event.target === replaceQuery) $('#replaceOne').click();
+    else moveMatch(event.shiftKey);
+  }
+});
+$('#replaceOne').addEventListener('click', () => {
+  const matches = currentMatches();
+  const offset = editor.selectionStart;
+  const match = matches.find((entry) => entry.start >= offset) ?? matches[0];
+  if (!match) { showMatchStatus(matches); return; }
+  const text = replaceQuery.value;
+  const end = match.start + text.length;
+  applyEditorEdit({ ...match, text, selectionStart: end, selectionEnd: end });
+  moveMatch(false, true);
+});
+$('#replaceAll').addEventListener('click', () => {
+  window.clearTimeout(findTimer);
+  const matches = currentMatches();
+  if (!matches.length) { showMatchStatus(matches); return; }
+  const offset = editor.selectionStart;
+  const text = replaceAllText(editor.value, findQuery.value, replaceQuery.value, findCase.checked);
+  applyEditorEdit({ start: 0, end: editor.value.length, text,
+    selectionStart: Math.min(offset, text.length), selectionEnd: Math.min(offset, text.length) });
+  window.clearTimeout(findTimer);
+  findStatus.textContent = '已替换 ' + matches.length + ' 处';
+});
+
 function openArticle(article: Article, articles: Article[]) {
   if (!persistState({ ...state, ...articleState(article), articles })) return;
   if (articlesDialog.open) articlesDialog.close();
@@ -913,7 +1208,11 @@ editor.addEventListener('input', () => {
   pendingLocation = null;
   locationRequest++;
   conversionRevision++;
-  saveState();
+  if (!findPanel.classList.contains('hidden')) {
+    window.clearTimeout(findTimer);
+    findTimer = window.setTimeout(() => showMatchStatus(currentMatches()), 150);
+  }
+  scheduleSourceSave();
   if (state.livePreview) {
     scheduleConvert();
   } else {
@@ -975,6 +1274,7 @@ $<HTMLInputElement>('#phoneWidth').addEventListener('change', (e) => {
   state.phoneWidth = (e.target as HTMLInputElement).checked;
   saveState();
   syncControls();
+  requestAnimationFrame(syncPreviewScroll);
 });
 
 $<HTMLInputElement>('#syncScroll').addEventListener('change', (e) => {
@@ -1072,6 +1372,7 @@ for (const tab of app.querySelectorAll<HTMLButtonElement>('.tab')) {
     preview.classList.toggle('hidden', activeTab !== 'preview');
     htmlView.classList.toggle('hidden', activeTab !== 'html');
     if (activeTab === 'preview') restorePreviewScroll();
+    else showExportSource();
   });
 }
 
@@ -1135,6 +1436,10 @@ document.addEventListener('keydown', (e) => {
   if (key === 's') {
     e.preventDefault();
     saveSource();
+  } else if ((key === 'f' || key === 'h') && !noteDialog.open && !articlesDialog.open) {
+    e.preventDefault();
+    openFind();
+    if (key === 'h') replaceQuery.focus();
   } else if (key === 'c' && e.shiftKey) {
     e.preventDefault();
     copyBtn.click();

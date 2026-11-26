@@ -48,6 +48,53 @@ md.renderer.rules.display_math = (tokens, index, _options, _env, renderer) => {
   return '<p' + renderer.renderAttrs(token) + '>' + token.content + '</p>\n';
 };
 
+md.block.ruler.before('reference', 'article_footnote_definition', (state, line, end, silent) => {
+  if (state.sCount[line]! - state.blkIndent >= 4) return false;
+  const content = state.src.slice(state.bMarks[line]! + state.tShift[line]!, state.eMarks[line]!);
+  const definition = /^\[\^([^\s\[\]]+)\]:[ \t]*(.*)$/.exec(content);
+  if (!definition) return false;
+  if (silent) return true;
+  const parts = [definition[2]!];
+  let next = line + 1;
+  while (next < end && state.sCount[next]! - state.blkIndent >= 4 && !state.isEmpty(next)) {
+    parts.push(state.src.slice(state.bMarks[next]! + state.tShift[next]!, state.eMarks[next]!));
+    next++;
+  }
+  const definitions: Map<string, string> = state.env.articleFootnotes ??= new Map();
+  if (!definitions.has(definition[1]!)) definitions.set(definition[1]!, parts.join('\n'));
+  state.line = next;
+  return true;
+}, { alt: ['paragraph', 'reference'] });
+
+md.inline.ruler.before('link', 'article_footnote_reference', (state, silent) => {
+  if (state.src[state.pos] !== '[' || state.src[state.pos + 1] !== '^') return false;
+  const reference = /^\[\^([^\s\[\]]+)\]/.exec(state.src.slice(state.pos));
+  const definitions: Map<string, string> | undefined = state.env.articleFootnotes;
+  if (!reference || !definitions?.has(reference[1]!)) return false;
+  if (!silent) {
+    const order: Map<string, number> = state.env.articleFootnoteOrder ??= new Map();
+    const id = reference[1]!;
+    if (!order.has(id)) order.set(id, order.size + 1);
+    const number = order.get(id)!;
+    state.push('html_inline', '', 0).content =
+      '<sup><a href="#latex-ref-footnote-' + number + '">[' + number + ']</a></sup>';
+  }
+  state.pos += reference[0].length;
+  return true;
+});
+
+md.core.ruler.after('inline', 'article_footnotes', (state) => {
+  const order: Map<string, number> | undefined = state.env.articleFootnoteOrder;
+  if (!order?.size) return;
+  const definitions: Map<string, string> = state.env.articleFootnotes;
+  const notes = Array.from(order, ([id, number]) => '<li id="latex-ref-footnote-' + number + '"><p>'
+    + state.md.renderInline(definitions.get(id)!) + '</p></li>');
+  const token = new state.Token('html_block', '', 0);
+  token.block = true;
+  token.content = '<section><p><strong>脚注</strong></p><ol>' + notes.join('') + '</ol></section>\n';
+  state.tokens.push(token);
+});
+
 /** Map rendered Markdown blocks back to source lines, including formulas spanning multiple lines. */
 export function renderMarkdownWithSourceLines(skeleton: string, segs: MathSeg[]): string {
   const lines = [0];
