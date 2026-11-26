@@ -97,8 +97,48 @@ function lastProofBlock(block: Element | null): Element | null {
   return block;
 }
 
-/** Run after math substitution so a terminal display can share its row with the proof symbol. */
-export function layoutProofEnds(html: string, alignRight: boolean): string {
+function keepProofEndTogether(marker: HTMLElement) {
+  const group = document.createElement('span');
+  group.style.whiteSpace = 'nowrap';
+  let previous = marker.previousSibling;
+  while (previous && (previous.nodeType === Node.TEXT_NODE && !previous.textContent?.trim()
+    || previous instanceof HTMLBRElement)) {
+    const sibling = previous.previousSibling;
+    previous.parentNode?.removeChild(previous);
+    previous = sibling;
+  }
+  marker.before(group);
+  if (previous instanceof Text) {
+    previous.data = previous.data.trimEnd();
+    const tail = /(?:\p{Script=Han}{1,3}|[\p{L}\p{N}]{1,16}|[^\s])\p{P}{0,4}$/u.exec(previous.data);
+    if (tail) group.append(previous.splitText(tail.index));
+  } else if (previous instanceof Element && /^(SPAN|EM|STRONG|S|U|CODE|A|IMG|SVG)$/i.test(previous.tagName)
+    && ((previous.textContent?.length ?? 0) <= 32 || previous.matches('svg,img'))) {
+    group.append(previous);
+  }
+  group.append('\u2060\u00a0', marker);
+}
+
+function placeSymbolBesideDisplay(graphic: Element, marker: HTMLElement) {
+  const table = document.createElement('table');
+  table.setAttribute('role', 'presentation');
+  table.style.cssText = 'width:100%;margin:0;border:0;border-collapse:collapse;table-layout:fixed;';
+  const row = table.insertRow();
+  const left = row.insertCell();
+  const center = row.insertCell();
+  const right = row.insertCell();
+  left.style.cssText = 'width:1.5em;border:0;padding:0;';
+  center.style.cssText = 'border:0;padding:0;text-align:center;';
+  right.style.cssText = 'width:1.5em;border:0;padding:0;text-align:right;vertical-align:bottom;';
+  right.setAttribute('align', 'right');
+  right.setAttribute('valign', 'bottom');
+  graphic.replaceWith(table);
+  center.append(graphic);
+  right.append(marker);
+}
+
+/** Keep an inline symbol attached to the last text or give a display formula a shared row. */
+export function layoutProofEnds(html: string, besideDisplay: boolean): string {
   if (!html.includes('data-proof-end')) return html;
   const template = document.createElement('template');
   template.innerHTML = html;
@@ -107,26 +147,25 @@ export function layoutProofEnds(html: string, alignRight: boolean): string {
     const paragraph = marker.parentElement;
     const separate = paragraph?.tagName === 'P' && Array.from(paragraph.childNodes).every(
       (node) => node === marker || (node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()));
-    if (alignRight) {
-      marker.style.cssText = 'float:right;margin-left:0.65em;white-space:nowrap;';
+    if (!separate) {
+      keepProofEndTogether(marker);
+      continue;
     }
-    if (!separate) continue;
     const previous = lastProofBlock(paragraph.previousElementSibling) as HTMLElement | null;
     if (previous && /^(P|LI)$/.test(previous.tagName)) {
-      if (!alignRight) previous.append(' ');
       previous.append(marker);
       paragraph.remove();
-    } else if (alignRight && previous?.tagName === 'SECTION'
-      && previous.querySelector(':scope > svg, :scope > img')) {
-      previous.style.position = 'relative';
-      previous.style.paddingLeft = '1.5em';
-      previous.style.paddingRight = '1.5em';
-      marker.style.cssText = 'position:absolute;right:0;bottom:0;white-space:nowrap;';
-      previous.append(marker);
-      paragraph.remove();
-    } else if (alignRight) {
+      keepProofEndTogether(marker);
+    } else if (besideDisplay && previous?.tagName === 'SECTION') {
+      const graphic = previous.querySelector(':scope > svg, :scope > img');
+      if (graphic) {
+        placeSymbolBesideDisplay(graphic, marker);
+        paragraph.remove();
+      } else {
+        paragraph.style.textAlign = 'right';
+      }
+    } else if (besideDisplay) {
       paragraph.style.textAlign = 'right';
-      marker.style.removeProperty('float');
     }
   }
   return template.innerHTML;
