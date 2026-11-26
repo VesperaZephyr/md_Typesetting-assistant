@@ -161,6 +161,31 @@ z &= x+y \label{eq:later}
     location.line === 1 && location.probes[0] === '中文句子引用');
 }
 
+{
+  const proofText = '这里是用于检查长证明导出行为的正文。'.repeat(24);
+  const source = String.raw`\begin{theorem}
+定理卡片。
+\end{theorem}
+\begin{proof}[直接证明]
+` + proofText + String.raw`
+
+\begin{enumerate}
+\item 第一步。
+\item 第二步。
+\end{enumerate}
+
+\[x=1\]
+\qed
+\end{proof}`;
+  const result = latexToMarkdown(source);
+  const html = md.render(result.markdown);
+  check('超过 300 字的证明作为正文导出，定理仍为卡片',
+    /<\/blockquote>\s*<p><strong>证明<\/strong>（直接证明）<\/p>/.test(html)
+      && html.includes('<p>' + proofText + '</p>') && (html.match(/<blockquote/g) || []).length === 1, html);
+  check('普通证明保留列表、公式和单个证毕符号',
+    html.includes('<ol>') && result.segs[0]?.tex === 'x=1' && (html.match(/∎/g) || []).length === 1, html);
+}
+
 console.log('\n[TikZ-CD]');
 {
   const source = String.raw`\begin{tikzcd}[column sep=1.5cm,ampersand replacement=\&]

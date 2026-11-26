@@ -580,9 +580,13 @@ function convertBlocks(s: string, theorems: Map<string, Theorem>, warnings: stri
       const theorem = theoremFor(env, theorems);
       if (/^(itemize|enumerate|description)$/.test(env)) body = renderList(body, env, warnings);
       else if (theorem) {
-        if (env === 'proof' && !/\\qed(?:here|symbol)?\b/.test(body)) body += '\n\n∎';
-        body = '<blockquote data-latex-theorem="' + theoremKind(env, theorem.title) + '">\n\n'
-          + body.trim() + '\n\n</blockquote>';
+        const kind = theoremKind(env, theorem.title);
+        if (kind === 'proof') {
+          body = body.trim();
+          if (!/\\qed(?:here|symbol)?\b/.test(body)) body += '\n\n∎';
+        } else {
+          body = '<blockquote data-latex-theorem="' + kind + '">\n\n' + body.trim() + '\n\n</blockquote>';
+        }
       } else if (env === 'tcolorbox') body = renderTcolorbox(body, open.options, warnings);
       else continue;
       s = s.slice(0, open.start) + '\n\n' + body + '\n\n' + s.slice(token.index + token[0].length - (token[3]?.length ?? 0));

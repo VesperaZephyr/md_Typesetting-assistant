@@ -53,25 +53,24 @@ const CARD_COLORS = new Map([
   ['theorem', '#3f67c5'], ['lemma', '#157e9a'],
   ['proposition', '#aa641b'], ['corollary', '#b84768'],
   ['example', '#9b572d'], ['question', '#7653a7'],
-  ['remark', '#667085'], ['note', '#667085'], ['proof', '#667085'],
+  ['remark', '#667085'], ['note', '#667085'],
 ]);
 
 export function styleTheoremCards(root: DocumentFragment) {
   for (const card of root.querySelectorAll<HTMLElement>('blockquote[data-latex-theorem]')) {
     const kind = card.dataset.latexTheorem ?? '';
     const color = CARD_COLORS.get(kind) ?? '#3f67c5';
-    const proof = kind === 'proof';
     card.style.padding = '0.85em 1em';
-    card.style.border = '1px ' + (proof ? 'dashed ' : 'solid ') + color + '66';
-    card.style.borderLeftWidth = proof ? '1px' : '4px';
+    card.style.border = '1px solid ' + color + '66';
+    card.style.borderLeftWidth = '4px';
     card.style.borderRadius = '8px';
-    card.style.backgroundColor = color + (proof ? '08' : '12');
+    card.style.backgroundColor = color + '12';
     const heading = card.querySelector<HTMLElement>(':scope > p:first-child > strong:first-child');
     if (heading) {
-      heading.style.color = proof ? 'inherit' : '#fff';
-      heading.style.backgroundColor = proof ? 'transparent' : color;
+      heading.style.color = '#fff';
+      heading.style.backgroundColor = color;
       heading.style.borderRadius = '4px';
-      heading.style.padding = proof ? '0' : '0.12em 0.45em';
+      heading.style.padding = '0.12em 0.45em';
     }
   }
 }
