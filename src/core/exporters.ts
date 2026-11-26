@@ -26,7 +26,7 @@ export function inlineHljsColors(frag: DocumentFragment | HTMLElement, theme: Th
 /** 清理样式相关属性，保留文内链接指向的锚点。 */
 export function stripClasses(
   frag: DocumentFragment | HTMLElement,
-  keep: { keepClass?: (el: Element, cls: string) => boolean } = {},
+  keep: { keepClass?: (el: Element, cls: string) => boolean; keepSourceLines?: boolean } = {},
 ) {
   const anchors = new Set(Array.from(frag.querySelectorAll('a[href^="#"]'), (link) => link.getAttribute('href')!.slice(1)));
   for (const el of Array.from(frag.querySelectorAll('*'))) {
@@ -38,6 +38,7 @@ export function stripClasses(
     }
     if (!anchors.has(el.id)) el.removeAttribute('id');
     for (const name of Array.from(el.attributes)) {
+      if (keep.keepSourceLines && name.name === 'data-source-lines') continue;
       if (name.name.startsWith('data-') || name.name.startsWith('aria-')) el.removeAttribute(name.name);
     }
   }

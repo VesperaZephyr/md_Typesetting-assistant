@@ -7,6 +7,7 @@ import {
   type BlockquoteStyleType, type TableStyleType, type StrongStyleType, type CodeThemeType,
 } from './core/themes';
 import { richCopy, textCopy } from './core/clipboard';
+import { sourceLocation, type SourceLocation } from './core/sourceLocation';
 import { SAMPLE_DOC } from './sample';
 
 /* ------------------------------------------------------------------ */
@@ -210,6 +211,7 @@ app.innerHTML = `
           <input type="checkbox" id="livePreview"> 实时
         </label>
         <button id="refreshBtn" class="pane-btn" title="立即刷新预览（Ctrl+Enter）">刷新</button>
+        <button id="locateBtn" class="pane-btn" title="在预览中定位光标所在段落">定位到当前段</button>
         <label class="pane-check" id="wechatLinkWrap" title="公众号正文不支持外部链接，勾选后转为文末参考链接">
           <input type="checkbox" id="wechatLinkFootnotes"> 外链转引用
         </label>
@@ -462,6 +464,7 @@ const warnBtn = $<HTMLButtonElement>('#warnBtn');
 const copyPlainBtn = $<HTMLButtonElement>('#copyPlainBtn');
 const fileInput = $<HTMLInputElement>('#fileInput');
 const inputHint = $<HTMLElement>('#inputHint');
+const locateBtn = $<HTMLButtonElement>('#locateBtn');
 const articleTitle = $<HTMLInputElement>('#articleTitle');
 const articlesDialog = $<HTMLDialogElement>('#articlesDialog');
 
@@ -482,22 +485,72 @@ let activeTab: 'preview' | 'html' = 'preview';
 
 let previewScrollLockUntil = 0;
 let editorScrollRaf = 0;
+let previewReady = false;
+let locationRequest = 0;
+let pendingLocation: (SourceLocation & { id: number }) | null = null;
 
 /** 注入预览 iframe 的滚动代理：沙箱内回传/接收滚动比例 */
 const PREVIEW_SCROLL_SCRIPT = `<script>
 (function () {
   var lock = false;
+  var unlockTimer;
   function scroller() { return document.scrollingElement || document.documentElement || document.body; }
+  function programmaticScroll() {
+    lock = true;
+    clearTimeout(unlockTimer);
+    unlockTimer = setTimeout(function () { lock = false; }, 100);
+  }
+  function sourceBlock(request) {
+    var mapped, span = Infinity;
+    document.querySelectorAll('[data-source-lines]').forEach(function (element) {
+      var range = element.getAttribute('data-source-lines').split(':').map(Number);
+      var length = range[1] - range[0];
+      if (range[0] <= request.line && request.line < range[1] && length <= span) {
+        mapped = element;
+        span = length;
+      }
+    });
+    if (mapped) return mapped;
+    var max = Math.max(1, scroller().scrollHeight);
+    var top = scroller().scrollTop;
+    var blocks = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,pre,th,td,blockquote'))
+      .map(function (element) {
+        return {
+          element: element,
+          text: element.textContent.replace(/[^\\p{L}\\p{N}]+/gu, '').toLowerCase(),
+          distance: Math.abs((element.getBoundingClientRect().top + top) / max - request.progress)
+        };
+      });
+    for (var probe of request.probes) {
+      var best;
+      for (var block of blocks) {
+        if (!block.text.includes(probe)) continue;
+        if (!best || best.element.contains(block.element) || block.distance < best.distance ||
+            (block.distance === best.distance && block.text.length < best.text.length)) best = block;
+      }
+      if (best) return best.element;
+    }
+  }
   window.addEventListener('message', function (ev) {
     var d = ev.data;
-    if (!d || d.type !== 'md2-scroll-to') return;
+    if (ev.source !== parent || !d) return;
+    if (d.type === 'md2-locate-source') {
+      var target = sourceBlock(d);
+      if (target) {
+        programmaticScroll();
+        target.scrollIntoView({ block: 'center' });
+        target.animate([{ outline: '2px solid #4a7dd9' }, { outline: '2px solid transparent' }], 900);
+      }
+      parent.postMessage({ type: 'md2-locate-result', id: d.id, found: !!target }, '*');
+      return;
+    }
+    if (d.type !== 'md2-scroll-to') return;
     var el = scroller();
     var max = el.scrollHeight - el.clientHeight;
     if (max <= 0) return;
-    lock = true;
+    programmaticScroll();
     var ratio = Math.max(0, Math.min(1, Number(d.ratio) || 0));
     el.scrollTop = ratio * max;
-    setTimeout(function () { lock = false; }, 80);
   });
   document.addEventListener('scroll', function () {
     if (lock) return;
@@ -523,6 +576,13 @@ function syncPreviewScroll() {
   preview.contentWindow?.postMessage({ type: 'md2-scroll-to', ratio }, '*');
 }
 
+function locateInPreview() {
+  if (!previewReady || !pendingLocation || resultRevision !== conversionRevision) return false;
+  preview.contentWindow?.postMessage({ type: 'md2-locate-source', ...pendingLocation }, '*');
+  pendingLocation = null;
+  return true;
+}
+
 editor.addEventListener('scroll', () => {
   if (!state.syncScroll || Date.now() < previewScrollLockUntil) return;
   if (editorScrollRaf) return;
@@ -534,15 +594,22 @@ editor.addEventListener('scroll', () => {
 
 // 右侧预览滚动 -> 同步左侧编辑器
 window.addEventListener('message', (ev) => {
-  if (!state.syncScroll || ev.source !== preview.contentWindow) return;
-  const d = ev.data as { type?: string; ratio?: number } | null;
+  if (ev.source !== preview.contentWindow) return;
+  const d = ev.data as { type?: string; ratio?: number; id?: number; found?: boolean } | null;
+  if (d?.type === 'md2-locate-result' && d.id === locationRequest && !d.found) {
+    flash(locateBtn, '未找到对应段落');
+  }
+  if (!state.syncScroll) return;
   if (!d || d.type !== 'md2-scroll' || typeof d.ratio !== 'number') return;
   previewScrollLockUntil = Date.now() + 120;
   const max = editor.scrollHeight - editor.clientHeight;
   if (max > 0) editor.scrollTop = d.ratio * max;
 });
 
-preview.addEventListener('load', syncPreviewScroll);
+preview.addEventListener('load', () => {
+  previewReady = true;
+  if (!locateInPreview()) syncPreviewScroll();
+});
 
 /* ------------------------------------------------------------------ */
 /* 转换与渲染                                                          */
@@ -578,6 +645,7 @@ async function runConvert() {
     $<HTMLButtonElement>('#refreshBtn').classList.remove('stale');
 
     // 预览（保持沙箱隔离；滚动由注入脚本与父页面通过 postMessage 联动）
+    previewReady = false;
     preview.srcdoc = `<!doctype html><html><head><meta charset="utf-8">${PREVIEW_SCROLL_SCRIPT}<style>
       body{margin:0;padding:18px;background:#fff;}
       svg{max-width:100%;}
@@ -604,6 +672,10 @@ async function runConvert() {
     if (revision !== conversionRevision) return;
     console.error(e);
     lastError = e instanceof Error ? e.message : String(e);
+    if (pendingLocation) {
+      pendingLocation = null;
+      flash(locateBtn, '预览转换失败');
+    }
     statsEl.textContent = '转换失败：' + lastError;
     statsEl.classList.add('status-error');
     warnBtn.textContent = '⚠ 转换出错';
@@ -668,6 +740,8 @@ function openArticle(article: Article, articles: Article[]) {
   if (!persistState({ ...state, ...articleState(article), articles })) return;
   if (articlesDialog.open) articlesDialog.close();
   editor.value = state.content;
+  pendingLocation = null;
+  locationRequest++;
   articleTitle.value = state.articleTitle;
   editor.scrollTop = 0;
   closeThemeDrawer();
@@ -736,6 +810,8 @@ articleTitle.addEventListener('input', () => {
 
 editor.addEventListener('input', () => {
   state.content = editor.value;
+  pendingLocation = null;
+  locationRequest++;
   conversionRevision++;
   saveState();
   if (state.livePreview) {
@@ -818,6 +894,18 @@ $<HTMLInputElement>('#livePreview').addEventListener('change', (e) => {
 });
 
 $('#refreshBtn').addEventListener('click', () => runConvert());
+locateBtn.addEventListener('click', () => {
+  if (activeTab !== 'preview') $('.tab[data-tab="preview"]').click();
+  pendingLocation = {
+    ...sourceLocation(editor.value, editor.selectionStart, editor.selectionEnd),
+    id: ++locationRequest,
+  };
+  if (resultRevision !== conversionRevision) {
+    if (!converting || (runningRevision !== conversionRevision && !pendingConvert)) void runConvert();
+    return;
+  }
+  locateInPreview();
+});
 
 $<HTMLInputElement>('#wechatLinkFootnotes').addEventListener('change', (e) => {
   state.wechatLinkFootnotes = (e.target as HTMLInputElement).checked;

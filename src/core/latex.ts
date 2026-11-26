@@ -7,6 +7,7 @@
  * 识别不了的部分保留原文并给出警告。
  */
 import { extractMath, type MathSeg } from './mathExtract';
+import { escapeAttr } from './exporters';
 
 export interface LatexResult {
   markdown: string;
@@ -25,6 +26,13 @@ const THEOREM_ENVS: Record<string, string> = {
   assumption: '假设', question: '问题', problem: '习题', exercise: '习题',
   answer: '解答', solution: '解', proof: '证明',
 };
+
+function theoremKind(env: string, title: string): string {
+  const name = env.replace(/\*$/, '').split('-').pop()!;
+  if (Object.prototype.hasOwnProperty.call(THEOREM_ENVS, name)) return name;
+  return Object.keys(THEOREM_ENVS).find((key) => title === THEOREM_ENVS[key] || title.toLowerCase() === key)
+    ?? 'theorem';
+}
 
 const DROP_COMMANDS = [
   'documentclass', 'usepackage', 'maketitle', 'tableofcontents', 'pagestyle',
@@ -395,6 +403,8 @@ function resolveReferences(
 ): string {
   const refs = new Map<string, Reference>();
   const unresolved = new Set<string>();
+  const labelsSeen = new Set<string>();
+  const duplicates = new Set<string>();
   const counters = new Map<string, number>();
   const headings = new Map<string, ReferenceTarget>();
   const scopes: { env: string; target?: ReferenceTarget; capturesLabel: boolean; item?: number }[] = [];
@@ -410,7 +420,12 @@ function resolveReferences(
 
   function anchor(label: string, target?: ReferenceTarget): string {
     const key = label.trim();
-    if (!target || refs.has(key)) {
+    if (labelsSeen.has(key)) {
+      duplicates.add(key);
+      return '';
+    }
+    labelsSeen.add(key);
+    if (!target) {
       unresolved.add(key);
       return '';
     }
@@ -481,7 +496,7 @@ function resolveReferences(
     return match;
   });
 
-  return finishReferences(s, segs, refs, unresolved, warnings);
+  return finishReferences(s, segs, refs, unresolved, duplicates, warnings);
 }
 
 function numberMath(segment: MathSeg, next: () => string, anchor: (label: string, number?: string) => string): string {
@@ -520,13 +535,19 @@ function numberMath(segment: MathSeg, next: () => string, anchor: (label: string
 }
 
 function finishReferences(s: string, segs: MathSeg[], refs: Map<string, Reference>,
-  unresolved: Set<string>, warnings: string[]): string {
+  unresolved: Set<string>, duplicates: Set<string>, warnings: string[]): string {
   function render(text: string, links: boolean) {
     return text.replace(/\\(eqref|autoref|cref|Cref|pageref|ref)(\*)?\s*\{([^{}]*)\}/g,
       (_m, command: string, star: string, labels: string) => labels.split(',').map((label) => {
         const key = label.trim();
-        const ref = command === 'pageref' ? undefined : refs.get(key);
-        if (!ref) { unresolved.add(key); return '??'; }
+        const duplicate = duplicates.has(key);
+        const ref = command === 'pageref' || duplicate ? undefined : refs.get(key);
+        if (!ref) {
+          if (!duplicate) unresolved.add(key);
+          const details = (duplicate ? '重复标签：' : '无法解析引用：') + key;
+          return links ? '<span data-latex-ref-issue="' + (duplicate ? 'duplicate' : 'missing')
+            + '" title="' + escapeAttr(details) + '">??</span>' : '??';
+        }
         const value = command === 'eqref' ? '(' + ref.number + ')'
           : command === 'ref' ? ref.number || ref.title : ref.title + (ref.number ? ' ' + ref.number : '');
         if (!links) return value;
@@ -537,6 +558,7 @@ function finishReferences(s: string, segs: MathSeg[], refs: Map<string, Referenc
   for (const seg of segs) seg.tex = render(seg.tex, false);
   const result = render(s, true);
   if (unresolved.size) warn(warnings, '交叉引用', '请核对标签：' + [...unresolved].join('、'));
+  if (duplicates.size) warn(warnings, '重复标签', [...duplicates].join('、'));
   return result;
 }
 
@@ -554,10 +576,12 @@ function convertBlocks(s: string, theorems: Map<string, Theorem>, warnings: stri
       if (open?.env !== env) continue;
       stack.pop();
       let body = s.slice(open.end, token.index);
+      const theorem = theoremFor(env, theorems);
       if (/^(itemize|enumerate|description)$/.test(env)) body = renderList(body, env, warnings);
-      else if (theoremFor(env, theorems)) {
+      else if (theorem) {
         if (env === 'proof' && !/\\qed(?:here|symbol)?\b/.test(body)) body += '\n\n∎';
-        body = quoteLines(body.trim());
+        body = '<blockquote data-latex-theorem="' + theoremKind(env, theorem.title) + '">\n\n'
+          + body.trim() + '\n\n</blockquote>';
       } else if (env === 'tcolorbox') body = renderTcolorbox(body, open.options, warnings);
       else continue;
       s = s.slice(0, open.start) + '\n\n' + body + '\n\n' + s.slice(token.index + token[0].length - (token[3]?.length ?? 0));

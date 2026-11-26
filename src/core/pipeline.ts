@@ -3,7 +3,8 @@
  *   源文本 →（LaTeX 预处理）→ 数学提取 → Markdown 渲染 → 代码高亮内联
  *         → 主题样式落地 → 平台整理（公众号/知乎）→ 公式标记替换 → 导出 HTML
  */
-import { md } from './markdown';
+import { md, renderMarkdownWithSourceLines } from './markdown';
+import { layoutInlineMath, styleTheoremCards, highlightReferenceIssues } from './articleLayout';
 import { extractMath, restoreMath, type MathSeg } from './mathExtract';
 import { latexToMarkdown, expandZeroArgMacros } from './latex';
 import { renderTexToSvg, renderTexToPng, svgExToPx, MathRenderError } from './mathRender';
@@ -182,7 +183,10 @@ async function substitute(
   if (blockMath) {
     html = html.replace(/<p(?:\s[^>]*)?>\s*@@MATH(\d+)@@\s*<\/p>/g, (m0, idx: string) => {
       const seg = segs[Number(idx)];
-      return seg?.display ? (rendered.get('@@MATH' + idx + '@@') ?? m0) : m0;
+      const markup = rendered.get('@@MATH' + idx + '@@');
+      if (!seg?.display || !markup) return m0;
+      const sourceLines = /^<p[^>]* (data-source-lines="\d+:\d+")/.exec(m0)?.[1];
+      return sourceLines ? markup.replace(/^<section\b/, '<section ' + sourceLines) : markup;
     });
   }
   return html.replace(/@@MATH(\d+)@@/g, (m0, idx) => rendered.get('@@MATH' + idx + '@@') ?? m0);
@@ -215,7 +219,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
     segs = r.segs;
   }
 
-  const baseHtml = md.render(skeleton);
+  const baseHtml = opts.inputFormat === 'markdown' ? renderMarkdownWithSourceLines(skeleton, segs) : md.render(skeleton);
   warnLocalImages(baseHtml, warnings);
 
   /* ---- 视觉预览：主题 + SVG 公式，与平台无关 ---- */
@@ -224,7 +228,10 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   inlineHljsColors(previewTpl.content, opts.theme);
   const themeWarnings = applyThemeStyles(previewTpl.content, opts.theme);
   warnings.push(...themeWarnings);
-  stripClasses(previewTpl.content);
+  layoutInlineMath(previewTpl.content, segs);
+  styleTheoremCards(previewTpl.content);
+  highlightReferenceIssues(previewTpl.content);
+  stripClasses(previewTpl.content, { keepSourceLines: true });
   if (opts.platform === 'wechat' && opts.wechatLinkFootnotes) {
     applyLinkFootnotes(previewTpl.content, warnings);
   }
@@ -246,6 +253,8 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
     tpl.innerHTML = baseHtml;
     inlineHljsColors(tpl.content, opts.theme);
     applyThemeStyles(tpl.content, opts.theme);
+    layoutInlineMath(tpl.content, segs);
+    styleTheoremCards(tpl.content);
     stripClasses(tpl.content);
     if (opts.wechatLinkFootnotes) {
       applyLinkFootnotes(tpl.content, warnings);

@@ -45,6 +45,7 @@ npm run build      # 类型检查 + 产出单文件 dist/index.html
 3. 点击顶栏 **「🎨 排版与主题」** 打开**左侧主题抽屉**：右侧预览始终可见、可滚动，调参即时生效；顶部**主题画廊**用缩略卡片展示每套主题的真实排版，点击即预览；底部一键「保存并应用」。关闭抽屉会自动还原未保存的修改；
 4. 预览面板右上角可开关**实时预览**（超长文档建议关闭，改完点「刷新」）；
 5. 「HTML 源码」页签可随时查看/核对将要粘贴的整洁内联 HTML。
+6. 编辑长稿时，将光标放在源文段落里并点「定位到当前段」，预览会滚到对应位置。Markdown 依据源文件行号定位，LaTeX 依据附近正文定位。同步滚动关闭时也可使用。
 
 ### 快捷键
 
@@ -57,6 +58,8 @@ npm run build      # 类型检查 + 产出单文件 dist/index.html
 | `Esc` | 关闭主题抽屉（未保存修改自动还原） |
 
 ## 数学公式
+
+- 中文紧邻行内公式时，预览与公众号 HTML 会补少量空隙。紧跟公式的中文标点随公式一起换行，手动输入的空格会保留。
 
 - 语法：`$…$`（行内）、`$$…$$` / `\[…\]` / `equation|align|gather|multline|eqnarray|alignat|flalign…`（含 `align*`、`gather*` 等全部带星号环境）；代码块中的 `$` 不会被误判
 - **公众号**：公式由 MathJax 渲染成自包含 SVG（`fontCache:'none'`，不依赖共享字形库），粘贴后以矢量显示、缩放不糊。若目标环境对 SVG 不友好，切 PNG 位图模式（2 倍超采样）
@@ -99,6 +102,8 @@ npm run build      # 类型检查 + 产出单文件 dist/index.html
 ## LaTeX 子集支持范围
 
 支持章节、文本强调、嵌套列表、引用块、表格、插图、代码环境、脚注和数学宏。
+
+定理和证明在预览与公众号 HTML 中有不同的卡片样式。预览里，重复标签和无法解析的引用会分别标色，悬停可查看对应标签。数学稿的混排和卡片设计参考了 [markdown-mods](https://github.com/libinyam/markdown-mods)。
 
 - `\colorbox`、`\fcolorbox` 和基础 `tcolorbox` 可保留盒内文本和列表。`tcolorbox` 支持 `title`、`colback` 和 `colframe`。
 - 支持常规定理、证明、`definition-proposition`、`definition-theorem` 和通过 `\newtheorem` 声明的环境，包括共享计数器与按章节编号。

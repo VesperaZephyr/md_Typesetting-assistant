@@ -3,7 +3,8 @@
  */
 import { extractMath } from '../src/core/mathExtract';
 import { latexToMarkdown } from '../src/core/latex';
-import { md } from '../src/core/markdown';
+import { md, renderMarkdownWithSourceLines } from '../src/core/markdown';
+import { sourceLocation } from '../src/core/sourceLocation';
 import { buildThemeFromVisualConfig, validateTheme, BUILTIN_THEMES } from '../src/core/themes';
 
 let failed = 0;
@@ -131,13 +132,32 @@ z &= x+y \label{eq:later}
       && />定义—定理 1\.1<\/a>/.test(html) && />定义—命题 1\.2<\/a>/.test(html)
       && />图 1<\/a>/.test(html) && />\(1\.2\)<\/a>/.test(html), html);
   check('定理中保留列表，支持未声明的组合环境',
-    /<blockquote>[\s\S]*?<ul>[\s\S]*?第一项/.test(html) && html.includes('定义–定理'), html);
+    /<blockquote data-latex-theorem="theorem">[\s\S]*?<ul>[\s\S]*?第一项/.test(html)
+      && html.includes('data-latex-theorem="proposition"') && html.includes('定义–定理'), html);
   const math = r.segs[0]!;
   check('编号公式行生成对应标签，跳过 notag',
     math.tex.includes('\\tag{1.1}') && math.tex.includes('\\tag{1.2}')
       && !math.tex.includes('\\label') && !math.tex.includes('\\tag{1.3}'), math.tex);
   check('解析失败的引用显示问号与标签警告',
     latexToMarkdown(String.raw`\ref{missing}`).warnings.some((message) => message.includes('missing')));
+}
+
+{
+  const result = latexToMarkdown('\\section{标题}\\label{duplicate}\n\\section{另一个标题}\\label{duplicate}\n见 \\ref{duplicate} 和 \\ref{missing}。');
+  check('重复和缺失的引用分别标记，重复引用不跳到错误目标',
+    result.markdown.includes('data-latex-ref-issue="duplicate"')
+      && result.markdown.includes('data-latex-ref-issue="missing"')
+      && !result.markdown.includes('href=')
+      && result.warnings.some((warning) => warning.includes('重复标签')));
+  const markdown = '第一段\n\n$$\nx^2\n$$\n\n目标段';
+  const math = extractMath(markdown);
+  const html = renderMarkdownWithSourceLines(math.text, math.segs);
+  check('Markdown 多行公式及后续段落映射到原文行',
+    html.includes('data-source-lines="2:5"') && html.includes('data-source-lines="6:7">目标段'), html);
+  const latex = '\\begin{definition}\n中文句子 $x$ 引用 \\ref{thm:sample}。\n\\end{definition}';
+  const location = sourceLocation(latex, latex.indexOf('中文'));
+  check('LaTeX 定位文本跳过公式与引用标记',
+    location.line === 1 && location.probes[0] === '中文句子引用');
 }
 
 console.log('\n[主题系统]');
