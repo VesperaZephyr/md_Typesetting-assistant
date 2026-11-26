@@ -190,14 +190,16 @@ export function expandZeroArgMacros(tex: string, macros: MathMacro[]): { tex: st
 export function latexToMarkdown(src: string): LatexResult {
   const warnings: string[] = [];
 
-  /* 1. verbatim → 围栏；再提取数学与公式 */
-  const { text: skeleton0, segs } = extractMath(verbatimToFences(src));
-
-  /* 2. 去注释（\% 除外） */
-  let s = skeleton0
+  /* 1. 保护代码块，去掉 LaTeX 注释后再提取数学公式。 */
+  const codeBlocks: string[] = [];
+  const source = verbatimToFences(src).replace(/^```[^\n]*\n[\s\S]*?^```[ \t]*$/gm, (block) => {
+    return '@@LATEXCODE' + (codeBlocks.push(block) - 1) + '@@';
+  })
     .split('\n')
-    .map((line) => line.replace(/(^|[^\\])%.*$/, '$1'))
+    .map((line) => line.replace(/^((?:\\.|[^\\%])*)%.*$/, '$1'))
     .join('\n');
+  const { text: skeleton, segs } = extractMath(source);
+  let s = skeleton;
 
   /* 3. 数学宏收集（宏通常在导言区，必须在 document 截取之前做） */
   const collected = collectMacros(s);
@@ -217,10 +219,10 @@ export function latexToMarkdown(src: string): LatexResult {
   for (const c of ['author', 'date']) {
     s = replaceCmd(s, c, () => '');
   }
-  if (/\\newtheorem/.test(s)) {
-    warn(warnings, '定理环境', '\\newtheorem 定义已忽略，编号按出现顺序自动生成');
-    s = s.replace(/\\newtheorem\s*\*?\s*(\[[^\]]*\])?\s*\{[^{}]*\}\s*\{[^{}]*\}(\[[^\]]*\])?(\[[^\]]*\])?/g, '');
-  }
+  const theorems = new Map<string, Theorem>();
+  s = collectTheorems(s, theorems);
+  const equationWithin = /\\numberwithin\s*\{equation\}\s*\{(chapter|section|subsection)\}/.exec(s)?.[1];
+  s = s.replace(/\\numberwithin\s*\{equation\}\s*\{(?:chapter|section|subsection)\}/g, '');
 
   /* 5. document 环境截取：丢弃 documentclass/usepackage 等剩余导言区 */
   const docBegin = s.indexOf('\\begin{document}');
@@ -238,7 +240,7 @@ export function latexToMarkdown(src: string): LatexResult {
   }
 
   /* 5. 文本命令改写（注意顺序：长命令在前，\text 兜底在后） */
-  s = replaceCmd(s, 'href', (x) => x); // 先做无害替换以防残留，真正双参处理在下面
+  s = resolveReferences(s, segs, theorems, equationWithin, warnings);
   s = processHref(s);
   s = replaceCmd(s, 'url', (x) => x);
   s = replaceCmd(s, 'textbf', (x) => `**${x.trim()}**`);
@@ -255,15 +257,9 @@ export function latexToMarkdown(src: string): LatexResult {
   s = replaceCmd(s, 'cite', (x) => `[${x.trim()}]`);
   s = replaceCmd(s, 'mbox', (x) => x);
   s = replaceCmd(s, 'text', (x) => x);
-  for (const c of ['eqref', 'autoref', 'cref', 'Cref', 'pageref', 'ref']) {
-    s = replaceCmd(s, c, (x) => x.trim());
-  }
-  if (/\\(?:eq)?ref\s*\{/.test(src)) warn(warnings, '交叉引用', '\\ref/\\eqref 已替换为标签名文本，请手动核对编号');
-  s = replaceCmd(s, 'label', () => '');
-
   /* 6. 环境转换 */
-  s = convertTheoremEnvs(s, warnings);
-  s = convertLists(s, warnings);
+  s = convertBlocks(s, theorems, warnings);
+  s = convertColorBoxes(s, warnings);
   s = convertTableEnvs(s);
   s = convertTables(s, warnings);
   s = convertFigures(s, warnings);
@@ -303,6 +299,8 @@ export function latexToMarkdown(src: string): LatexResult {
   if (title) s = '# ' + title.replace(/[\\{}]/g, '') + '\n\n' + s;
 
   /* 10. 未知命令提示 */
+  const unknownEnvs = [...new Set([...s.matchAll(/\\begin\{([^{}]+)\}/g)].map((m) => m[1]))];
+  if (unknownEnvs.length) warn(warnings, '未识别环境', '保留原文：' + unknownEnvs.join('、'));
   const leftover = s.match(/\\[A-Za-z]+/g);
   if (leftover) {
     const unknown = [...new Set(leftover.map((c) => c.slice(1)))].filter(
@@ -311,11 +309,17 @@ export function latexToMarkdown(src: string): LatexResult {
     if (unknown.length) warn(warnings, '未识别命令', `保留原文：${unknown.map((c) => '\\' + c).join(' ')}，请手动检查`);
   }
 
+  s = s.replace(/@@LATEXCODE(\d+)@@/g, (match, index: string, offset: number) => {
+    const before = s.slice(s.lastIndexOf('\n', offset - 1) + 1, offset);
+    const prefix = /^((?:[ \t]*>[ \t]?)*[ \t]*)(?:(?:[-+*]|\d+\.)[ \t]+)?$/.exec(before);
+    const indent = prefix ? prefix[1]! + ' '.repeat(before.length - prefix[1]!.length) : '';
+    return codeBlocks[Number(index)]?.replace(/\n/g, '\n' + indent) ?? match;
+  });
   return { markdown: s, segs, preamble: collected.macros.map((m) => m.def).join('\n'), macros: collected.macros, warnings };
 }
 
 function quoteLines(body: string): string {
-  return body.split('\n').map((l) => l.trim() ? '> ' + l.trim() : '>').join('\n');
+  return body.split('\n').map((l) => l.trim() ? '> ' + l.trimEnd() : '>').join('\n');
 }
 
 /** \href{url}{text} 双参数处理 */
@@ -335,7 +339,7 @@ function processHref(s: string): string {
 
 /** 标题类命令：允许 \section*{} */
 function replaceCmdLine(src: string, cmd: string, fn: (inner: string) => string): string {
-  const re = new RegExp('\\\\' + cmd + '\\s*\\*?\\s*\\{');
+  const re = new RegExp('\\\\' + cmd + '\\s*\\*?\\s*(?:\\[[^\\]]*\\]\\s*)?\\{');
   let out = src;
   let guard = 0;
   while (guard++ < 500) {
@@ -349,79 +353,222 @@ function replaceCmdLine(src: string, cmd: string, fn: (inner: string) => string)
   return out;
 }
 
-/** 定理类环境 → 引用块，按类型自动编号；proof 不编号、以 ∎ 收尾。 */
-function convertTheoremEnvs(s: string, warnings: string[]): string {
-  const counters: Record<string, number> = {};
-  for (const env of Object.keys(THEOREM_ENVS)) {
-    const label = THEOREM_ENVS[env]!;
-    let guard = 0;
-    while (guard++ < 500) {
-      const openRe = new RegExp('\\\\begin\\{' + env + '\\}(\\[[^\\]]*\\])?');
-      const m = openRe.exec(s);
-      if (!m) break;
-      const closeTok = '\\end{' + env + '}';
-      const close = s.indexOf(closeTok, m.index + m[0].length);
-      if (close < 0) break;
-      const body = s.slice(m.index + m[0].length, close).trim();
-      const name = m[1] ? m[1].slice(1, -1).trim() : '';
-      const isProof = env === 'proof';
-      let head: string;
-      if (isProof) {
-        head = `**${label}.**`;
-      } else {
-        counters[env] = (counters[env] || 0) + 1;
-        head = `**${label} ${counters[env]}**` + (name ? `（${name}）` : '') + '.';
-      }
-      const lines = body.split('\n').map((l) => l.trim());
-      lines.unshift(head);
-      if (isProof) lines.push('∎');
-      const quoted = lines.map((l) => l ? '> ' + l : '>').join('\n');
-      // 前后补空行：否则相邻定理/证明的引用块会黏成一个
-      s = s.slice(0, m.index) + '\n\n' + quoted + '\n\n' + s.slice(close + closeTok.length);
-    }
+interface Theorem { title: string; counter?: string; within?: string }
+
+function collectTheorems(s: string, theorems: Map<string, Theorem>): string {
+  const command = /\\newtheorem(\*)?\s*\{([\w@:-]+)\}\s*(?:\[([\w@:-]+)\])?\s*(?=\{)/g;
+  let cursor = 0;
+  let out = '';
+  let match: RegExpExecArray | null;
+  while ((match = command.exec(s))) {
+    const title = readArg(s, command.lastIndex);
+    if (!title) continue;
+    const within = /^[ \t]*\[([\w@:-]+)\]/.exec(s.slice(title[1]));
+    const env = match[2]!;
+    theorems.set(env, { title: title[0], counter: match[1] ? undefined : match[3] ?? env, within: within?.[1] });
+    out += s.slice(cursor, match.index);
+    cursor = title[1] + (within?.[0].length ?? 0);
+    command.lastIndex = cursor;
   }
-  if (Object.keys(counters).length) {
-    warn(warnings, '定理环境', '定理类环境编号按出现顺序自动生成，请核对');
-  }
-  s = s.replace(/\\qedhere|\\qedsymbol|\\qed\b/g, '∎');
-  return s;
+  return out + s.slice(cursor);
 }
 
-interface ListTok { kind: string; begin: boolean; idx: number; len: number }
-
-/** itemize / enumerate / description → markdown 列表（栈式配对，由内向外转换）。 */
-function convertLists(s: string, warnings: string[]): string {
-  let guard = 0;
-  while (guard++ < 500) {
-    const tokens: ListTok[] = [];
-    const re = /\\(begin|end)\{(itemize|enumerate|description)\}/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(s))) {
-      tokens.push({ kind: m[2]!, begin: m[1] === 'begin', idx: m.index, len: m[0].length });
-    }
-    if (!tokens.length) break;
-    // 栈式配对，遇到第一对完整的（即最内层）就转换
-    const stack: ListTok[] = [];
-    let done = false;
-    for (const t of tokens) {
-      if (t.begin) stack.push(t);
-      else {
-        const top = stack.pop();
-        if (!top) break;
-        const depth = stack.length; // 祖先层数
-        const inner = s.slice(top.idx + top.len, t.idx);
-        const rendered = renderList(inner, top.kind, depth, warnings);
-        s = s.slice(0, top.idx) + rendered + s.slice(t.idx + t.len);
-        done = true;
-        break;
-      }
-    }
-    if (!done) break; // 环境不配对，放弃
-  }
-  return s;
+function theoremFor(env: string, theorems: Map<string, Theorem>): Theorem | undefined {
+  const declared = theorems.get(env);
+  if (declared) return declared;
+  const name = env.replace(/\*$/, '');
+  const parts = name.split('-');
+  if (!parts.every((part) => Object.prototype.hasOwnProperty.call(THEOREM_ENVS, part))) return undefined;
+  return { title: parts.map((part) => THEOREM_ENVS[part]).join('–'),
+    counter: name === 'proof' || env.endsWith('*') ? undefined : name };
 }
 
-function renderList(content: string, kind: string, depth: number, warnings: string[]): string {
+interface ReferenceTarget { title: string; number: string }
+interface Reference extends ReferenceTarget { id: string }
+
+const HEADINGS = ['part', 'chapter', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph'];
+const HEADING_NAMES = ['部分', '章', '节', '小节', '小节', '段', '子段'];
+
+function resolveReferences(
+  s: string, segs: MathSeg[], theorems: Map<string, Theorem>, equationWithin: string | undefined,
+  warnings: string[],
+): string {
+  const refs = new Map<string, Reference>();
+  const unresolved = new Set<string>();
+  const counters = new Map<string, number>();
+  const headings = new Map<string, ReferenceTarget>();
+  const scopes: { env: string; target?: ReferenceTarget; capturesLabel: boolean; item?: number }[] = [];
+  let heading: ReferenceTarget | undefined;
+
+  function nextNumber(counter: string, within?: string) {
+    const prefix = within ? headings.get(within)?.number : undefined;
+    const key = counter + ':' + (prefix ?? '');
+    const n = (counters.get(key) ?? 0) + 1;
+    counters.set(key, n);
+    return prefix ? prefix + '.' + n : String(n);
+  }
+
+  function anchor(label: string, target?: ReferenceTarget): string {
+    const key = label.trim();
+    if (!target || refs.has(key)) {
+      unresolved.add(key);
+      return '';
+    }
+    const id = 'latex-ref-' + (refs.size + 1);
+    refs.set(key, { ...target, id });
+    return '<span id="' + id + '"></span>';
+  }
+
+  const tokens = /\\(begin|end)\{([\w@*:-]+)\}(\[[^\]]*\])?|\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph|caption|item)(\*)?(?![A-Za-z*])|@@MATH(\d+)@@|\\label\s*\{([^{}]*)\}/g;
+  s = s.replace(tokens, (match, boundary: string, env: string, name: string, cmd: string,
+    star: string, math: string, label: string) => {
+    if (boundary === 'begin') {
+      const theorem = theoremFor(env, theorems);
+      const float = /^(figure|table)\*?$/.test(env);
+      let target: ReferenceTarget | undefined;
+      if (theorem) {
+        const counter = theorem.counter;
+        const within = counter && counter !== env ? theorems.get(counter)?.within : theorem.within;
+        const number = counter ? nextNumber(counter, within) : '';
+        target = { title: theorem.title, number };
+        scopes.push({ env, target, capturesLabel: true });
+        const subtitle = name ? '（' + name.slice(1, -1).trim() + '）' : '';
+        return match + '\n\n**' + theorem.title + (number ? ' ' + number : '') + '**' + subtitle + '\n\n';
+      }
+      const list = /^(itemize|enumerate|description)$/.test(env);
+      scopes.push({ env, capturesLabel: float || list, item: list ? 0 : undefined });
+      return match;
+    }
+    if (boundary === 'end') {
+      if (scopes[scopes.length - 1]?.env === env) scopes.pop();
+      return match;
+    }
+    if (math !== undefined) {
+      const segment = segs[Number(math)]!;
+      if (!segment) return match;
+      const anchors = numberMath(segment, () => nextNumber('equation', equationWithin),
+        (label, number) => anchor(label, number ? { title: '式', number } : undefined));
+      return anchors ? '\n\n' + anchors + '\n\n' + match + '\n\n' : match;
+    }
+    if (cmd === 'caption') {
+      const frame = [...scopes].reverse().find((scope) => /^(figure|table)\*?$/.test(scope.env));
+      if (frame && !star) {
+        const kind = frame.env.replace(/\*$/, '');
+        frame.target = { title: kind === 'figure' ? '图' : '表', number: nextNumber(kind) };
+      }
+      return match;
+    }
+    if (cmd === 'item') {
+      const list = [...scopes].reverse().find((scope) => scope.item !== undefined);
+      if (list?.env === 'enumerate') {
+        list.item = (list.item ?? 0) + 1;
+        const parents = scopes.slice(0, scopes.indexOf(list)).filter((scope) => scope.env === 'enumerate');
+        if (parents.length === 0) list.target = { title: '条目', number: String(list.item) };
+      }
+      return match;
+    }
+    if (label !== undefined) {
+      const frame = [...scopes].reverse().find((scope) => scope.capturesLabel);
+      return anchor(label, frame ? frame.target : heading);
+    }
+    const level = HEADINGS.indexOf(cmd);
+    if (level >= 0) {
+      for (const child of HEADINGS.slice(level)) headings.delete(child);
+      const parent = HEADINGS.slice(0, level).reverse().find((section) => headings.has(section));
+      heading = star ? undefined : { title: HEADING_NAMES[level]!, number: nextNumber(cmd, parent) };
+      if (heading) headings.set(cmd, heading);
+    }
+    return match;
+  });
+
+  return finishReferences(s, segs, refs, unresolved, warnings);
+}
+
+function numberMath(segment: MathSeg, next: () => string, anchor: (label: string, number?: string) => string): string {
+  const env = /^\\begin\{([\w*]+)\}([\s\S]*)\\end\{\1\}$/.exec(segment.tex);
+  const kind = env?.[1] ?? '';
+  const numbered = kind !== '' && !kind.endsWith('*') && kind !== 'displaymath';
+  let anchors = '';
+  function numberRow(row: string) {
+    const tag = /\\tag\*?\s*\{([^{}]*)\}/.exec(row)?.[1];
+    const number = tag ?? (numbered && row.trim() && !/\\(?:nonumber|notag)\b/.test(row) ? next() : undefined);
+    const cleaned = row.replace(/\\label\s*\{([^{}]*)\}/g, (_m, label: string) => {
+      anchors += anchor(label, number);
+      return '';
+    });
+    return number && tag === undefined ? cleaned.trimEnd() + '\\tag{' + number + '}\n' : cleaned;
+  }
+  if (!env) segment.tex = numberRow(segment.tex);
+  else if (/^(align|gather|alignat|flalign|eqnarray)\*?$/.test(kind)) {
+    let depth = 0;
+    let start = 0;
+    let body = '';
+    const input = env[2]!;
+    for (const token of input.matchAll(/\\begin\{[^{}]*\}|\\end\{[^{}]*\}|\\\\(?:\*?(?:\[[^\]]*\])?)|\\[{}]|[{}]/g)) {
+      if (token[0] === '{' || token[0].startsWith('\\begin')) depth++;
+      else if (token[0] === '}' || token[0].startsWith('\\end')) depth--;
+      else if (depth === 0 && token[0].startsWith('\\\\')) {
+        body += numberRow(input.slice(start, token.index)) + token[0];
+        start = token.index + token[0].length;
+      }
+    }
+    segment.tex = '\\begin{' + kind + '}' + body + numberRow(input.slice(start)) + '\\end{' + kind + '}';
+  } else {
+    segment.tex = '\\begin{' + kind + '}' + numberRow(env[2]!) + '\\end{' + kind + '}';
+  }
+  return anchors;
+}
+
+function finishReferences(s: string, segs: MathSeg[], refs: Map<string, Reference>,
+  unresolved: Set<string>, warnings: string[]): string {
+  function render(text: string, links: boolean) {
+    return text.replace(/\\(eqref|autoref|cref|Cref|pageref|ref)(\*)?\s*\{([^{}]*)\}/g,
+      (_m, command: string, star: string, labels: string) => labels.split(',').map((label) => {
+        const key = label.trim();
+        const ref = command === 'pageref' ? undefined : refs.get(key);
+        if (!ref) { unresolved.add(key); return '??'; }
+        const value = command === 'eqref' ? '(' + ref.number + ')'
+          : command === 'ref' ? ref.number || ref.title : ref.title + (ref.number ? ' ' + ref.number : '');
+        if (!links) return value;
+        const escaped = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return star ? escaped : '<a href="#' + ref.id + '">' + escaped + '</a>';
+      }).join('、'));
+  }
+  for (const seg of segs) seg.tex = render(seg.tex, false);
+  const result = render(s, true);
+  if (unresolved.size) warn(warnings, '交叉引用', '请核对标签：' + [...unresolved].join('、'));
+  return result;
+}
+
+function convertBlocks(s: string, theorems: Map<string, Theorem>, warnings: string[]): string {
+  while (true) {
+    const stack: { env: string; start: number; end: number; options: string }[] = [];
+    let converted = false;
+    for (const token of s.matchAll(/\\(begin|end)\{([\w@*:-]+)\}(\[[^\]]*\])?/g)) {
+      const env = token[2]!;
+      if (token[1] === 'begin') {
+        stack.push({ env, start: token.index, end: token.index + token[0].length, options: token[3] ?? '' });
+        continue;
+      }
+      const open = stack[stack.length - 1];
+      if (open?.env !== env) continue;
+      stack.pop();
+      let body = s.slice(open.end, token.index);
+      if (/^(itemize|enumerate|description)$/.test(env)) body = renderList(body, env, warnings);
+      else if (theoremFor(env, theorems)) {
+        if (env === 'proof' && !/\\qed(?:here|symbol)?\b/.test(body)) body += '\n\n∎';
+        body = quoteLines(body.trim());
+      } else if (env === 'tcolorbox') body = renderTcolorbox(body, open.options, warnings);
+      else continue;
+      s = s.slice(0, open.start) + '\n\n' + body + '\n\n' + s.slice(token.index + token[0].length - (token[3]?.length ?? 0));
+      converted = true;
+      break;
+    }
+    if (!converted) return s.replace(/\\qed(?:here|symbol)?\b/g, '∎');
+  }
+}
+
+function renderList(content: string, kind: string, warnings: string[]): string {
   const n = content.length;
   const starts: number[] = [];
   let envDepth = 0;
@@ -454,13 +601,92 @@ function renderList(content: string, kind: string, depth: number, warnings: stri
     else if (kind === 'enumerate') {
       prefix = counter + '. ';
       if (label) warn(warnings, '列表', `enumerate 的自定义编号 ${label} 已忽略`);
-    } else prefix = '- **' + label + '**' + (label ? ' ' : '');
-    // item 内部换行的行按列表缩进对齐
-    const pad = '  '.repeat(depth + 1);
+    } else prefix = '- ';
+    if (label && kind !== 'enumerate') item = '**' + label + '** ' + item;
+    const pad = ' '.repeat(prefix.length);
+    if (/^(?:[-+*] |\d+\. |<div\b)/.test(item)) item = '\n' + item;
     item = item.split('\n').map((l, idx2) => (idx2 === 0 ? '' : pad) + l.trimEnd()).join('\n');
-    items.push('  '.repeat(depth) + prefix + item);
+    items.push(prefix + item);
   }
   return items.join('\n');
+}
+
+const TEX_COLORS = new Map(Object.entries({
+  black: '000000', white: 'ffffff', red: 'ff0000', green: '00ff00', blue: '0000ff',
+  yellow: 'ffff00', cyan: '00ffff', magenta: 'ff00ff', gray: '808080',
+  darkgray: '404040', lightgray: 'bfbfbf', brown: 'bf8040', lime: 'bfff00',
+  olive: '808000', orange: 'ff8000', pink: 'ffbfbf', purple: 'bf0040',
+  teal: '008080', violet: '800080',
+}));
+
+function boxColor(spec: string, model = ''): string | undefined {
+  const value = spec.trim();
+  if ((model === 'HTML' || value.startsWith('#')) && /^#?[a-f\d]{6}$/i.test(value)) {
+    return '#' + value.replace(/^#/, '');
+  }
+  if (model === 'rgb' || model === 'RGB') {
+    const max = model === 'rgb' ? 1 : 255;
+    const channels = value.split(',').map(Number);
+    if (channels.length === 3 && channels.every((n) => n >= 0 && n <= max)) {
+      return 'rgb(' + channels.map((n) => Math.round(n * 255 / max)).join(',') + ')';
+    }
+    return undefined;
+  }
+  if (model) return undefined;
+  const hex = TEX_COLORS.get(value);
+  if (hex) return '#' + hex;
+  const mix = /^([A-Za-z]+)!(\d{1,3})(?:!([A-Za-z]+))?$/.exec(value);
+  if (!mix) return undefined;
+  const a = TEX_COLORS.get(mix[1]!);
+  const b = TEX_COLORS.get(mix[3] ?? 'white');
+  const weight = Number(mix[2]) / 100;
+  if (!a || !b || weight > 1) return undefined;
+  const channels = [0, 2, 4].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * weight
+    + parseInt(b.slice(i, i + 2), 16) * (1 - weight)));
+  return 'rgb(' + channels.join(',') + ')';
+}
+
+function renderTcolorbox(body: string, options: string, warnings: string[]): string {
+  const opts = options.slice(1, -1);
+  const option = (name: string) => new RegExp('(?:^|,)\\s*' + name + '\\s*=\\s*(?:\\{([^{}]*)\\}|([^,]*))')
+    .exec(opts)?.slice(1).find((part) => part !== undefined)?.trim();
+  const background = option('colback');
+  const frame = option('colframe');
+  const title = option('title');
+  const bg = background ? boxColor(background) : '#f5f5f5';
+  const border = frame ? boxColor(frame) : '#888888';
+  if (!bg || !border) warn(warnings, '色盒', '部分颜色未识别，已使用默认颜色');
+  return '<div style="padding:0.6em 0.8em;background-color:' + (bg ?? '#f5f5f5')
+    + ';border:1px solid ' + (border ?? '#888888') + '">\n\n'
+    + (title ? '**' + title + '**\n\n' : '') + body.trim() + '\n\n</div>';
+}
+
+function convertColorBoxes(s: string, warnings: string[]): string {
+  const command = /\\(f?colorbox)(?![A-Za-z])\s*(?:\[([A-Za-z]+)\]\s*)?/g;
+  let match: RegExpExecArray | null;
+  while ((match = command.exec(s))) {
+    const first = readArg(s, command.lastIndex);
+    if (!first) continue;
+    const framed = match[1] === 'fcolorbox';
+    const background = framed ? readArg(s, first[1]) : first;
+    if (!background) continue;
+    const content = readArg(s, background[1]);
+    if (!content) continue;
+    const bg = boxColor(background[0], match[2]);
+    const border = framed ? boxColor(first[0], match[2]) : undefined;
+    if (!bg || (framed && !border)) warn(warnings, '色盒', '部分颜色未识别，已使用默认颜色');
+    const style = 'background-color:' + (bg ?? '#fff4c2') + (framed ? ';border:1px solid ' + (border ?? '#888888') : '');
+    const body = content[0].trim();
+    const isBlock = /\n\s*\n|\n\s*(?:[-+*] |\d+\. )|^(?:[-+*] |\d+\. )/.test(body);
+    const indent = /^[ \t]*/.exec(s.slice(s.lastIndexOf('\n', match.index - 1) + 1, match.index))?.[0] ?? '';
+    const replacement = isBlock
+      ? '\n\n' + indent + '<div style="' + style + ';padding:0.5em">\n\n'
+        + indent + body + '\n\n' + indent + '</div>\n\n' + indent
+      : '<span style="' + style + ';padding:0.1em 0.25em">' + body.replace(/\n[ \t]*/g, ' ') + '</span>';
+    s = s.slice(0, match.index) + replacement + s.slice(content[1]);
+    command.lastIndex = match.index;
+  }
+  return s;
 }
 
 /** table 浮动环境：取出 caption 作粗体表题，去掉居中/字号等命令，保留内部 tabular。 */
@@ -508,7 +734,8 @@ function convertFigures(s: string, warnings: string[]): string {
       warn(warnings, '插图', 'figure 环境中没有 \\includegraphics，已跳过');
       return '';
     }
-    return (alt ? `**${alt}**\n\n` : '') + `![](${path})`;
+    const anchors = body.match(/<span id="latex-ref-\d+"><\/span>/g)?.join('') ?? '';
+    return '\n\n' + (anchors ? anchors + '\n\n' : '') + (alt ? `**${alt}**\n\n` : '') + `![](${path})\n\n`;
   });
 }
 

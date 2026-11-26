@@ -88,7 +88,9 @@ export function svgExToPx(svg: string): { svg: string; width: number; height: nu
   const div = document.createElement('div');
   div.innerHTML = svg;
   const el = div.querySelector('svg')!;
-  const width = num(el.getAttribute('width'));
+  const svgWidth = el.getAttribute('width');
+  // MathJax uses a fluid width for tagged displays and supplies an intrinsic minimum width.
+  const width = (svgWidth?.endsWith('%') ? num(el.style.minWidth) : 0) || num(svgWidth);
   const height = num(el.getAttribute('height'));
     const vAlign = num(el.style.verticalAlign || (el.getAttribute('style')?.match(/vertical-align:\s*(-?[\d.]+)ex/)?.[1] ?? null));
   el.setAttribute('width', String(width));

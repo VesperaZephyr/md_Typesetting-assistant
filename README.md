@@ -38,7 +38,7 @@ npm run build      # 类型检查 + 产出单文件 dist/index.html
 
 点顶栏的 **「我的文章」** 新建或打开稿件，在编辑区上方修改标题。标题、正文、输入格式和目标平台的排版设置会自动保存在当前浏览器。打开本地文件或载入示例会新建一篇文章。要迁移到其他设备，可以在「更多」中下载源文件，再到另一台设备打开。
 
-1. 左栏粘贴 Markdown 或 LaTeX（也可拖拽 `.md` / `.tex` 到窗口），支持**平滑双向同步滚动**；
+1. 左栏粘贴 Markdown 或 LaTeX（也可拖拽 `.md` / `.tex` 到窗口）。右栏的「同步滚动」可随时开启或关闭，设置会在当前浏览器中保存；
 2. 顶栏选目标平台：
    - **公众号**：选主题（**22 套内置主题** + 自定义）、公式格式（SVG 矢量 / SVG 固定像素 / PNG 位图）→ 点「复制到公众号」→ 到公众号编辑器 Ctrl+V
    - **知乎**：选公式模式与粘贴方式（富文本 / Markdown 纯文本）；勾选「H1→H2」可避免正文大标题与知乎标题栏重复 → 点「复制到知乎」→ 到知乎文章编辑器 Ctrl+V
@@ -98,7 +98,11 @@ npm run build      # 类型检查 + 产出单文件 dist/index.html
 
 ## LaTeX 子集支持范围
 
-面向数学类文章：章节（`\section` 等）、`\title`、强调/加粗/下划线、`itemize/enumerate/description`（含嵌套）、`quote/abstract/keywords`、**定理类环境**（theorem/lemma/proposition/definition/proof… 自动中文命名与编号，proof 以 ∎ 收尾）、`table + caption + tabular`（含 multicolumn 展开）、`figure + includegraphics + caption`、verbatim/lstlisting、`\footnote`（转括号注）、`\href`、`\cite`、`\label/\ref`（转为标签名文本）、数学宏。
+支持章节、文本强调、嵌套列表、引用块、表格、插图、代码环境、脚注和数学宏。
+
+- `\colorbox`、`\fcolorbox` 和基础 `tcolorbox` 可保留盒内文本和列表。`tcolorbox` 支持 `title`、`colback` 和 `colframe`。
+- 支持常规定理、证明、`definition-proposition`、`definition-theorem` 和通过 `\newtheorem` 声明的环境，包括共享计数器与按章节编号。
+- `\ref`、`\eqref`、`\autoref`、`\cref`、`\Cref` 可引用章节、定理、编号公式、插图和表格。预览与导出 HTML 包含文内跳转。无法解析的标签显示为 `??` 并列入警告。`\pageref` 依赖纸面页码，网页转换不计算页码。
 
 不识别的命令/环境会**保留原文并列入警告**（状态栏 ⚠），不会静默吞掉内容。复杂宏包排版（TikZ、chem 等）不在范围内。
 

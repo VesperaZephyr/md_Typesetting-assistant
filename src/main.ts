@@ -26,6 +26,7 @@ interface AppState {
   themeName: string;
   customThemes: Record<string, Theme>;
   phoneWidth: boolean;
+  syncScroll: boolean;
   activeArticleId: string;
   articleTitle: string;
   articles: Article[];
@@ -65,6 +66,7 @@ function loadState(): AppState {
     themeName: DEFAULT_THEME_NAME,
     customThemes: {},
     phoneWidth: false,
+    syncScroll: true,
     activeArticleId: 'initial',
     articleTitle: '示例文章',
     articles: [],
@@ -215,6 +217,7 @@ app.innerHTML = `
           <input type="checkbox" id="zhihuDemoteH1"> H1→H2
         </label>
         <label class="phone-toggle"><input type="checkbox" id="phoneWidth"> 手机宽度</label>
+        <label class="pane-check"><input type="checkbox" id="syncScroll"> 同步滚动</label>
       </div>
     </div>
     <div class="pane-body">
@@ -477,7 +480,6 @@ let activeTab: 'preview' | 'html' = 'preview';
 /* 核心：平滑双向同步滚动（postMessage，预览保持沙箱隔离）              */
 /* ------------------------------------------------------------------ */
 
-let lastEditorRatio = 0;
 let previewScrollLockUntil = 0;
 let editorScrollRaf = 0;
 
@@ -504,25 +506,35 @@ const PREVIEW_SCROLL_SCRIPT = `<script>
     if (max <= 0) return;
     parent.postMessage({ type: 'md2-scroll', ratio: el.scrollTop / max }, '*');
   }, { passive: true });
+  document.addEventListener('click', function (event) {
+    var link = event.target.closest && event.target.closest('a[href^="#latex-ref-"]');
+    if (!link) return;
+    var target = document.getElementById(link.getAttribute('href').slice(1));
+    if (target) { event.preventDefault(); target.scrollIntoView(); }
+  });
 })();
 </script>`;
 
 // 左侧编辑器滚动 -> 同步右侧预览
+function syncPreviewScroll() {
+  if (!state.syncScroll) return;
+  const max = editor.scrollHeight - editor.clientHeight;
+  const ratio = max > 0 ? editor.scrollTop / max : 0;
+  preview.contentWindow?.postMessage({ type: 'md2-scroll-to', ratio }, '*');
+}
+
 editor.addEventListener('scroll', () => {
-  if (Date.now() < previewScrollLockUntil) return;
+  if (!state.syncScroll || Date.now() < previewScrollLockUntil) return;
   if (editorScrollRaf) return;
   editorScrollRaf = requestAnimationFrame(() => {
     editorScrollRaf = 0;
-    const max = editor.scrollHeight - editor.clientHeight;
-    if (max <= 0) return;
-    lastEditorRatio = editor.scrollTop / max;
-    preview.contentWindow?.postMessage({ type: 'md2-scroll-to', ratio: lastEditorRatio }, '*');
+    syncPreviewScroll();
   });
 }, { passive: true });
 
 // 右侧预览滚动 -> 同步左侧编辑器
 window.addEventListener('message', (ev) => {
-  if (ev.source !== preview.contentWindow) return;
+  if (!state.syncScroll || ev.source !== preview.contentWindow) return;
   const d = ev.data as { type?: string; ratio?: number } | null;
   if (!d || d.type !== 'md2-scroll' || typeof d.ratio !== 'number') return;
   previewScrollLockUntil = Date.now() + 120;
@@ -530,9 +542,7 @@ window.addEventListener('message', (ev) => {
   if (max > 0) editor.scrollTop = d.ratio * max;
 });
 
-preview.addEventListener('load', () => {
-  preview.contentWindow?.postMessage({ type: 'md2-scroll-to', ratio: lastEditorRatio }, '*');
-});
+preview.addEventListener('load', syncPreviewScroll);
 
 /* ------------------------------------------------------------------ */
 /* 转换与渲染                                                          */
@@ -646,6 +656,7 @@ function syncControls() {
   $<HTMLInputElement>('#livePreview').checked = state.livePreview;
   copyBtn.textContent = isWechat ? '复制到公众号' : '复制到知乎';
   $<HTMLInputElement>('#phoneWidth').checked = state.phoneWidth;
+  $<HTMLInputElement>('#syncScroll').checked = state.syncScroll;
   document.body.classList.toggle('phone-width', state.phoneWidth);
 }
 
@@ -659,7 +670,6 @@ function openArticle(article: Article, articles: Article[]) {
   editor.value = state.content;
   articleTitle.value = state.articleTitle;
   editor.scrollTop = 0;
-  lastEditorRatio = 0;
   closeThemeDrawer();
   syncControls();
   runConvert();
@@ -789,6 +799,12 @@ $<HTMLInputElement>('#phoneWidth').addEventListener('change', (e) => {
   state.phoneWidth = (e.target as HTMLInputElement).checked;
   saveState();
   syncControls();
+});
+
+$<HTMLInputElement>('#syncScroll').addEventListener('change', (e) => {
+  state.syncScroll = (e.target as HTMLInputElement).checked;
+  saveState();
+  syncPreviewScroll();
 });
 
 $<HTMLInputElement>('#livePreview').addEventListener('change', (e) => {
