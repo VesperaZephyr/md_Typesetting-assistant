@@ -503,7 +503,8 @@ function resolveReferences(
 function numberMath(segment: MathSeg, next: () => string, anchor: (label: string, number?: string) => string): string {
   const env = /^\\begin\{([\w*]+)\}([\s\S]*)\\end\{\1\}$/.exec(segment.tex);
   const kind = env?.[1] ?? '';
-  const numbered = kind !== '' && !kind.endsWith('*') && kind !== 'displaymath';
+  // AMS sub-environments such as aligned and gathered cannot carry an equation tag.
+  const numbered = /^(equation|align|gather|multline|eqnarray|alignat|flalign)$/.test(kind);
   let anchors = '';
   function numberRow(row: string) {
     const tag = /\\tag\*?\s*\{([^{}]*)\}/.exec(row)?.[1];

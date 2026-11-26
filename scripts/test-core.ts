@@ -43,6 +43,28 @@ console.log('\n[mathExtract]');
 
 console.log('\n[LaTeX → Markdown]');
 {
+  const aligned = String.raw`\begin{aligned}
+a &= b+c \\
+  &= d
+\end{aligned}`;
+  const source = '前文\n\\[' + aligned + '\\]\n后文';
+  const escaped = '\\\\[' + aligned + '\\\\]';
+  const mdResult = extractMath(source);
+  check('正常和双反斜线方括号都完整提取 aligned',
+    mdResult.segs[0]?.tex === aligned && extractMath(escaped).segs[0]?.tex === aligned);
+  check('aligned 单独成块，紧邻正文时不进入段落内部',
+    /<p[^>]*>前文<\/p>\s*<p[^>]*>@@MATH0@@<\/p>\s*<p[^>]*>后文<\/p>/.test(
+      renderMarkdownWithSourceLines(mdResult.text, mdResult.segs)));
+  const latexResult = latexToMarkdown(source + '\n\\begin{equation}' + aligned + '\\end{equation}');
+  check('不向 aligned 插入 tag，只有外层 equation 编号',
+    latexResult.segs[0]?.tex === aligned && latexResult.segs[1]?.tex.endsWith('\\tag{1}\n\\end{equation}'),
+    latexResult.segs.map((segment) => segment.tex).join('\n'));
+  const unnumbered = latexToMarkdown(String.raw`\[\begin{gathered}x \\ y\end{gathered}\]
+\[\begin{pmatrix}1&0\\0&1\end{pmatrix}\]`);
+  check('gathered 和矩阵子环境也不占公式编号',
+    unnumbered.segs.length === 2 && unnumbered.segs.every((segment) => !segment.tex.includes('\\tag')));
+}
+{
   const tex = String.raw`\documentclass{article}
 \newcommand{\R}{\mathbb{R}}
 \title{测试}

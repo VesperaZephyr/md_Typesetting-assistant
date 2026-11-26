@@ -5,7 +5,7 @@
  */
 import { md, renderMarkdownWithSourceLines } from './markdown';
 import { layoutInlineMath, styleTheoremCards, highlightReferenceIssues } from './articleLayout';
-import { diagramPlaceholders, extractMath, restoreMath, type MathSeg } from './mathExtract';
+import { displayMathPlaceholders, extractMath, restoreMath, type MathSeg } from './mathExtract';
 import { latexToMarkdown, expandZeroArgMacros } from './latex';
 import { renderTexToSvg, renderTexToPng, svgExToPx, svgToPng, MathRenderError } from './mathRender';
 import { renderTikzDiagram } from './tikzRender';
@@ -214,7 +214,7 @@ async function substitute(
   // 否则会产出非法的 <p><section>…</section></p>，公众号解析时可能多出空行。
   const blockMath = opts.platform === 'wechat' || (opts.platform === 'zhihu' && opts.zhihuMath === 'eeimg');
   let html = skeletonHtml;
-  if (blockMath || diagramPlaceholders(segs).size) {
+  if (blockMath || segs.some((seg) => seg.diagram)) {
     html = html.replace(/<p(?:\s[^>]*)?>\s*@@MATH(\d+)@@\s*<\/p>/g, (m0, idx: string) => {
       const seg = segs[Number(idx)];
       const markup = rendered.get('@@MATH' + idx + '@@');
@@ -250,7 +250,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   }
 
   const baseHtml = opts.inputFormat === 'markdown' ? renderMarkdownWithSourceLines(skeleton, segs)
-    : md.render(skeleton, { diagramPlaceholders: diagramPlaceholders(segs) });
+    : md.render(skeleton, { displayMathPlaceholders: displayMathPlaceholders(segs) });
   const diagramCount = segs.filter((seg) => seg.diagram).length;
   const diagramCache = new Map<string, string>();
   const diagramSvgs = new Map<string, string>();

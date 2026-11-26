@@ -124,11 +124,21 @@ export function extractMath(src: string): { text: string; segs: MathSeg[] } {
     }
 
     // ---- \(...\) 与 \[...\] -------------------------------------------
-    if (ch === '\\' && src.startsWith('\\[', i)) {
-      const end = src.indexOf('\\]', i + 2);
+    const displayOpen = ch === '\\' ? /^\\{1,2}\[/.exec(src.slice(i, i + 3))?.[0] : undefined;
+    if (displayOpen) {
+      const slashCount = displayOpen.length - 1;
+      const close = '\\'.repeat(slashCount) + ']';
+      const start = i + displayOpen.length;
+      let end = src.indexOf(close, start);
+      while (end >= 0 && src[end - 1] === '\\') end = src.indexOf(close, end + close.length);
       if (end > 0) {
-        addSeg(src.slice(i + 2, end).trim(), true, src.slice(i, end + 2));
-        i = end + 2;
+        addSeg(src.slice(start, end).trim(), true, src.slice(i, end + close.length));
+        i = end + close.length;
+        continue;
+      }
+      if (slashCount > 1) {
+        out += displayOpen;
+        i = start;
         continue;
       }
     }
@@ -164,8 +174,8 @@ export function extractMath(src: string): { text: string; segs: MathSeg[] } {
   return { text: out, segs };
 }
 
-export function diagramPlaceholders(segs: MathSeg[]): Set<string> {
-  return new Set(segs.filter((segment) => segment.diagram).map((segment) => segment.placeholder));
+export function displayMathPlaceholders(segs: MathSeg[]): Set<string> {
+  return new Set(segs.filter((segment) => segment.display).map((segment) => segment.placeholder));
 }
 
 /** 把占位符替换回文本（纯文本还原用） */

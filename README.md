@@ -59,6 +59,8 @@ npm run build      # 类型检查 + 产出单文件 dist/index.html
 
 ## 数学公式
 
+- `\[\begin{aligned} … \end{aligned}\]` 可直接用于行间对齐，保持无编号。需要给整组公式编号时，可把 `aligned` 放在 `equation` 内。
+
 - 中文紧邻行内公式时，预览与公众号 HTML 会补少量空隙。紧跟公式的中文标点随公式一起换行，手动输入的空格会保留。
 
 - 语法：`$…$`（行内）、`$$…$$` / `\[…\]` / `equation|align|gather|multline|eqnarray|alignat|flalign…`（含 `align*`、`gather*` 等全部带星号环境）；代码块中的 `$` 不会被误判
