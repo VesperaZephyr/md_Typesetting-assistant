@@ -7,6 +7,7 @@ import { md, renderMarkdownWithSourceLines } from '../src/core/markdown';
 import { sourceLocation } from '../src/core/sourceLocation';
 import { findText, formatSelection, insertFootnote, replaceAllText } from '../src/core/editorTools';
 import { parseTikzDiagram } from '../src/core/tikzcd';
+import { normalizeZhihuTex, zhihuEquationImg, zhihuEquationText } from '../src/core/exporters';
 import { buildThemeFromVisualConfig, validateTheme, BUILTIN_THEMES } from '../src/core/themes';
 
 let failed = 0;
@@ -20,6 +21,21 @@ function check(name: string, cond: boolean, extra?: string) {
     failed++;
     console.error('  ✗ ' + name + (extra ? ' — ' + extra : ''));
   }
+}
+
+console.log('\n[知乎公式]');
+{
+  const tex = normalizeZhihuTex(String.raw`x\coloneqq\frac{a}{b}`);
+  check('知乎行内与行间公式使用不同的原生标记，且 URL 与替代文本同源',
+    tex === String.raw`x:=\frac{a}{b}`
+    && zhihuEquationImg(tex, false).includes('eeimg="1"')
+    && zhihuEquationImg(tex, true).includes('eeimg="2"')
+    && zhihuEquationImg(tex, true).includes('tex=' + encodeURIComponent(tex))
+    && zhihuEquationImg(tex, true).includes('alt="' + tex + '"'));
+  const aligned = String.raw`\begin{aligned}x&\coloneqq1\\\coloneqqSymbol&=2\end{aligned}`;
+  check('仅替换完整命令，保留多行对齐与 Markdown 行间定界符',
+    zhihuEquationText(normalizeZhihuTex(aligned), true)
+    === String.raw`$$\begin{aligned}x&:=1\\\coloneqqSymbol&=2\end{aligned}$$`);
 }
 
 console.log('\n[mathExtract]');

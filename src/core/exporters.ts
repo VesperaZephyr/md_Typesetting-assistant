@@ -76,11 +76,62 @@ export function escapeAttr(s: string): string {
 
 export type ZhihuMathMode = 'eeimg' | 'dollar';
 
-/** 知乎公式服务：tex URL 编码后作为图片请求，粘贴进编辑器即是渲染好的公式。 */
+/** 知乎的公式标记区分行内（1）和行间（2）。 */
 export function zhihuEquationImg(tex: string, display: boolean): string {
   const src = 'https://www.zhihu.com/equation?tex=' + encodeURIComponent(tex);
-  const cls = display ? ' class="content_image"' : '';
-  return `<img src="${src}" alt="${escapeAttr(tex)}" eeimg="1"${cls}>`;
+  return `<img src="${src}" alt="${escapeAttr(tex)}" eeimg="${display ? 2 : 1}">`;
+}
+
+export function normalizeZhihuTex(tex: string): string {
+  return tex.replace(/\\(?:[a-zA-Z]+|[^a-zA-Z])/g, (command) =>
+    command === '\\coloneqq' ? ':=' : command);
+}
+
+export function diagramFilename(id: string): string {
+  return 'tikzcd-' + (Number(id) + 1) + '.png';
+}
+
+/** 知乎以换行分隔引用段落，段尾的空节点会被粘贴成额外空行。 */
+export function normalizeZhihuQuotes(root: DocumentFragment): void {
+  const trimEnd = (element: Element) => {
+    while (element.lastChild && (element.lastChild.nodeName === 'BR'
+      || (element.lastChild.nodeType === Node.TEXT_NODE && !element.lastChild.textContent?.trim()))) {
+      element.lastChild.remove();
+    }
+  };
+  for (const quote of root.querySelectorAll('blockquote')) {
+    trimEnd(quote);
+    while (quote.lastChild instanceof HTMLParagraphElement) {
+      const paragraph = quote.lastChild;
+      trimEnd(paragraph);
+      if (paragraph.hasChildNodes() || paragraph.id) break;
+      paragraph.remove();
+      trimEnd(quote);
+    }
+
+    const paragraphs = Array.from(quote.children);
+    if (paragraphs.length === 0 || paragraphs.some((p) => !p.matches('p:not([id])') || p.querySelector('img[eeimg="2"]'))
+      || Array.from(quote.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) continue;
+    const content = document.createDocumentFragment();
+    for (const p of paragraphs) {
+      if (content.hasChildNodes()) content.append(document.createElement('br'), document.createElement('br'));
+      content.append(...Array.from(p.childNodes));
+    }
+    quote.replaceChildren(content);
+  }
+}
+
+/** 为知乎剪贴板保留插图位置，下载的 HTML 则保留嵌入的 PNG。 */
+export function zhihuClipboardHtml(html: string): string {
+  if (!html.includes('data-zhihu-diagram=')) return html;
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  for (const diagram of template.content.querySelectorAll('section[data-zhihu-diagram]')) {
+    const placeholder = document.createElement('p');
+    placeholder.textContent = '【交换图 ' + diagramFilename(diagram.getAttribute('data-zhihu-diagram')!) + '】';
+    diagram.replaceWith(placeholder);
+  }
+  return template.innerHTML;
 }
 
 export function zhihuEquationText(tex: string, display: boolean): string {

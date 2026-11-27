@@ -7,7 +7,7 @@ import {
   type BlockquoteStyleType, type TableStyleType, type StrongStyleType, type CodeThemeType,
 } from './core/themes';
 import { richCopy, textCopy } from './core/clipboard';
-import { wechatClipboardHtml } from './core/exporters';
+import { diagramFilename, wechatClipboardHtml, zhihuClipboardHtml } from './core/exporters';
 import { findText, formatSelection, insertFootnote, replaceAllText, type TextEdit, type TextFormat, type TextMatch } from './core/editorTools';
 import { svgToPng } from './core/mathRender';
 import { sourceLocation, sourceSyncMap, type SourceLocation } from './core/sourceLocation';
@@ -189,7 +189,7 @@ app.innerHTML = `
     </label>
     <label class="ctl" id="zhihuMathCtl">公式
       <select id="zhihuMath">
-        <option value="eeimg">知乎公式图片（粘贴即显示）</option>
+        <option value="eeimg">知乎公式（区分行内与行间）</option>
         <option value="dollar">$…$ 文本（知乎自行渲染）</option>
       </select>
     </label>
@@ -243,7 +243,10 @@ app.innerHTML = `
         <span id="findStatus" role="status"></span>
       </div>
     </div>
-    <textarea id="editor" spellcheck="false" placeholder="在此粘贴 Markdown 或 LaTeX……"></textarea>
+    <div class="source-editor">
+      <div id="findHighlights" class="find-highlights hidden" aria-hidden="true"></div>
+      <textarea id="editor" spellcheck="false" placeholder="在此粘贴 Markdown 或 LaTeX……"></textarea>
+    </div>
     <div id="articleSaveStatus" class="statusbar" role="status"></div>
   </section>
   <section class="pane preview-pane">
@@ -746,9 +749,11 @@ const PREVIEW_SCROLL_SCRIPT = `<script>
   });
   document.addEventListener('scroll', reportScroll, { passive: true });
   document.addEventListener('click', function (event) {
-    var diagram = event.target.closest && event.target.closest('button[data-save-diagram]');
+    var diagram = event.target.closest && event.target.closest('button[data-save-diagram],button[data-copy-diagram]');
     if (diagram) {
-      parent.postMessage({ type: 'md2-save-diagram', diagramId: diagram.dataset.saveDiagram }, '*');
+      parent.postMessage({ type: 'md2-diagram', revision: revision,
+        diagramId: diagram.dataset.copyDiagram || diagram.dataset.saveDiagram,
+        copy: diagram.hasAttribute('data-copy-diagram') }, '*');
       return;
     }
     var link = event.target.closest && event.target.closest('a[href^="#latex-ref-"]');
@@ -801,11 +806,16 @@ window.addEventListener('message', (ev) => {
   if (ev.source !== preview.contentWindow) return;
   const d = ev.data as {
     type?: string; ratio?: number; top?: number; line?: number; sync?: boolean; revision?: number;
-    id?: number; found?: boolean; diagramId?: string;
+    id?: number; found?: boolean; diagramId?: string; copy?: boolean;
   } | null;
-  if (d?.type === 'md2-save-diagram' && typeof d.diagramId === 'string') {
+  if (d?.type === 'md2-diagram' && typeof d.diagramId === 'string') {
+    if (d.revision !== previewRevision || resultRevision !== conversionRevision
+      || previewArticleId !== state.activeArticleId) return;
     const svg = lastResult?.diagramSvgs.get(d.diagramId);
-    if (svg) void saveDiagramPng(svg, d.diagramId);
+    if (svg) {
+      if (d.copy) void copyDiagramPng(svg);
+      else void saveDiagramPng(svg, d.diagramId);
+    }
     return;
   }
   if (d?.type === 'md2-locate-result' && d.id === locationRequest && !d.found) {
@@ -827,10 +837,25 @@ async function saveDiagramPng(svg: string, id: string) {
     const png = await svgToPng(svg);
     const link = document.createElement('a');
     link.href = png.dataUrl;
-    link.download = 'tikzcd-' + (Number(id) + 1) + '.png';
+    link.download = diagramFilename(id);
     link.click();
   } catch (error) {
     flash(statsEl, error instanceof Error ? error.message : '交换图下载失败');
+  }
+}
+
+async function copyDiagramPng(svg: string) {
+  try {
+    if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
+      flash(statsEl, '此浏览器无法复制 PNG，请下载上传');
+      return;
+    }
+    // 在点击激活仍有效时发起写入，延迟生成图片数据。
+    const png = svgToPng(svg).then(async ({ dataUrl }) => (await fetch(dataUrl)).blob());
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+    flash(statsEl, '已复制 PNG，请在知乎插图位置粘贴');
+  } catch {
+    flash(statsEl, '复制 PNG 失败，请下载上传');
   }
 }
 
@@ -891,7 +916,7 @@ async function runConvert() {
       preview.srcdoc = `<!doctype html><html data-preview-revision="${revision}" data-preview-top="${articleScrollPosition().preview}"><head><meta charset="utf-8"><script type="application/json" id="md2-source-sync">${sourceMap}</script>${PREVIEW_SCROLL_SCRIPT}<style>
       body{margin:0;padding:18px;background:#fff;}
       svg{max-width:100%;}
-      button[data-save-diagram]{margin-top:8px;padding:2px 9px;border:1px solid #8e9cb3;border-radius:4px;background:#fff;color:#334155;font:12px system-ui;cursor:pointer;}
+      button:is([data-save-diagram],[data-copy-diagram]){margin-top:8px;padding:2px 9px;border:1px solid #8e9cb3;border-radius:4px;background:#fff;color:#334155;font:12px system-ui;cursor:pointer;}
       </style></head><body>${result.previewHtml}</body></html>`;
     } else {
       locateInPreview();
@@ -1030,8 +1055,45 @@ const findQuery = $<HTMLInputElement>('#findQuery');
 const replaceQuery = $<HTMLInputElement>('#replaceQuery');
 const findCase = $<HTMLInputElement>('#findCase');
 const findStatus = $('#findStatus');
+const findHighlights = $('#findHighlights');
 let findTimer: number | undefined;
 let findCache: { source: string; query: string; matchCase: boolean; matches: TextMatch[] } | undefined;
+let highlightedMatches: TextMatch[] | undefined;
+let activeHighlight: Element | null = null;
+
+function syncFindHighlights() {
+  if (findHighlights.classList.contains('hidden')) return;
+  findHighlights.style.width = editor.clientWidth + 'px';
+  findHighlights.scrollTop = editor.scrollTop;
+  findHighlights.scrollLeft = editor.scrollLeft;
+}
+
+function renderFindHighlights(matches: TextMatch[], active: number) {
+  findHighlights.classList.toggle('hidden', matches.length === 0);
+  if (highlightedMatches !== matches) {
+    const fragment = document.createDocumentFragment();
+    if (matches.length) {
+      let offset = 0;
+      const source = editor.value;
+      for (const match of matches) {
+        const mark = document.createElement('mark');
+        mark.textContent = source.slice(match.start, match.end);
+        fragment.append(source.slice(offset, match.start), mark);
+        offset = match.end;
+      }
+      fragment.append(source.slice(offset), '\u200b');
+    }
+    findHighlights.replaceChildren(fragment);
+    highlightedMatches = matches;
+  }
+  activeHighlight?.classList.remove('current-match');
+  activeHighlight = active >= 0 ? findHighlights.children.item(active) : null;
+  activeHighlight?.classList.add('current-match');
+  syncFindHighlights();
+}
+
+editor.addEventListener('scroll', syncFindHighlights, { passive: true });
+new ResizeObserver(syncFindHighlights).observe(editor);
 
 function currentMatches(): TextMatch[] {
   const source = editor.value;
@@ -1044,9 +1106,10 @@ function currentMatches(): TextMatch[] {
 }
 
 function showMatchStatus(matches: TextMatch[]) {
+  const active = matches.findIndex((match) => match.start === editor.selectionStart && match.end === editor.selectionEnd);
+  renderFindHighlights(matches, active);
   if (!findQuery.value) { findStatus.textContent = ''; return; }
   if (!matches.length) { findStatus.textContent = '无匹配'; return; }
-  const active = matches.findIndex((match) => match.start === editor.selectionStart && match.end === editor.selectionEnd);
   findStatus.textContent = active >= 0 ? (active + 1) + ' / ' + matches.length : matches.length + ' 处匹配';
 }
 
@@ -1087,6 +1150,7 @@ function openFind() {
 function closeFind() {
   window.clearTimeout(findTimer);
   findCache = undefined;
+  renderFindHighlights([], -1);
   findPanel.classList.add('hidden');
   $('#findBtn').setAttribute('aria-expanded', 'false');
   editor.focus({ preventScroll: true });
@@ -1128,6 +1192,7 @@ $('#replaceAll').addEventListener('click', () => {
   applyEditorEdit({ start: 0, end: editor.value.length, text,
     selectionStart: Math.min(offset, text.length), selectionEnd: Math.min(offset, text.length) });
   window.clearTimeout(findTimer);
+  renderFindHighlights(currentMatches(), -1);
   findStatus.textContent = '已替换 ' + matches.length + ' 处';
 });
 
@@ -1135,6 +1200,7 @@ function openArticle(article: Article, articles: Article[]) {
   if (!persistState({ ...state, ...articleState(article), articles })) return;
   if (articlesDialog.open) articlesDialog.close();
   editor.value = state.content;
+  if (!findPanel.classList.contains('hidden')) showMatchStatus(currentMatches());
   pendingLocation = null;
   locationRequest++;
   articleTitle.value = state.articleTitle;
@@ -1209,6 +1275,7 @@ editor.addEventListener('input', () => {
   locationRequest++;
   conversionRevision++;
   if (!findPanel.classList.contains('hidden')) {
+    renderFindHighlights([], -1);
     window.clearTimeout(findTimer);
     findTimer = window.setTimeout(() => showMatchStatus(currentMatches()), 150);
   }
@@ -1323,14 +1390,16 @@ copyBtn.addEventListener('click', async () => {
   const result = resultForExport(copyBtn);
   if (!result) return;
   const plain = state.platform === 'zhihu' && state.zhihuPaste === 'plain';
-  const html = state.platform === 'wechat' ? wechatClipboardHtml(result.exportHtml) : result.exportHtml;
+  const html = state.platform === 'wechat'
+    ? wechatClipboardHtml(result.exportHtml) : zhihuClipboardHtml(result.exportHtml);
   const how = plain
     ? (await textCopy(result.plainText) ? 'api' : 'fail')
     : await richCopy(html, html.replace(/<[^>]+>/g, ''));
   if (how === 'fail') {
     flash(copyBtn, '复制失败 ✕');
   } else {
-    flash(copyBtn, plain ? '已复制，去知乎粘贴 ✓' : '已复制，去目标编辑器粘贴 ✓');
+    const hasZhihuDiagrams = state.platform === 'zhihu' && !plain && result.diagramSvgs.size > 0;
+    flash(copyBtn, hasZhihuDiagrams ? '已复制正文，交换图请单独粘贴' : '已复制，去目标编辑器粘贴 ✓');
   }
 });
 
@@ -1397,6 +1466,7 @@ moreMenu.addEventListener('click', async (e) => {
     if (!window.confirm('确定要清空当前内容吗？此操作不可撤销。')) return;
     editor.value = '';
     state.content = '';
+    if (!findPanel.classList.contains('hidden')) showMatchStatus(currentMatches());
     saveState();
     runConvert();
   }

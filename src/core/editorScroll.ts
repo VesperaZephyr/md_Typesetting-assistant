@@ -83,7 +83,10 @@ export function createEditorScroll(editor: HTMLTextAreaElement, readSource: () =
     },
     topAtOffset(offset: number): number {
       update();
-      return logicalTop(lastAtOrBefore(offset, (line) => starts[line]!));
+      const start = Math.max(0, Math.min(source.length, offset));
+      range.setStart(text, start);
+      range.setEnd(text, start + 1);
+      return range.getBoundingClientRect().top - mirror!.getBoundingClientRect().top - lineTop(0);
     },
   };
 }

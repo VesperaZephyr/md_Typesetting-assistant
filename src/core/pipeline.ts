@@ -12,7 +12,7 @@ import { renderTikzDiagram } from './tikzRender';
 import { applyThemeStyles, type Theme } from './themes';
 import {
   escapeAttr, inlineHljsColors, stripClasses, stripStyles,
-  zhihuEquationImg, zhihuEquationText, type ZhihuMathMode,
+  diagramFilename, normalizeZhihuQuotes, normalizeZhihuTex, zhihuEquationImg, zhihuEquationText, type ZhihuMathMode,
 } from './exporters';
 
 export type Platform = 'wechat' | 'zhihu';
@@ -58,14 +58,19 @@ async function renderSegDiagram(seg: MathSeg, opts: ConvertOptions, preamble: st
     const diagramId = seg.placeholder.slice('@@MATH'.length, -2);
     downloadable?.set(diagramId, svg);
     let markup = svg;
-    if (opts.platform === 'zhihu' || opts.wechatMath === 'png') {
+    if ((!downloadable && opts.platform === 'zhihu') || (opts.platform === 'wechat' && opts.wechatMath === 'png')) {
       const png = await svgToPng(svg);
       markup = '<img alt="交换图" src="' + png.dataUrl + '" width="' + png.width + '" height="' + png.height
         + '" style="max-width:100%;height:auto;">';
     }
-    const button = downloadable ? '<div><button type="button" data-save-diagram="' + diagramId
-      + '">下载 PNG</button></div>' : '';
-    return '<section style="text-align:center;margin:1.2em 0;overflow-x:auto;">' + markup + button + '</section>';
+    const zhihu = opts.platform === 'zhihu';
+    const controls = downloadable ? '<div>'
+      + (zhihu ? '<span>' + diagramFilename(diagramId) + '</span> <button type="button" data-copy-diagram="'
+        + diagramId + '">复制 PNG</button> ' : '')
+      + '<button type="button" data-save-diagram="' + diagramId + '">下载 PNG</button></div>' : '';
+    const exportMarker = zhihu && !downloadable ? ' data-zhihu-diagram="' + diagramId + '"' : '';
+    return '<section' + exportMarker + ' style="text-align:center;margin:1.2em 0;overflow-x:auto;">'
+      + markup + controls + '</section>';
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     warnings.push('交换图未能渲染：' + message);
@@ -102,11 +107,6 @@ function renderSegPng(seg: MathSeg, preamble: string) {
       throw new MathRenderError(seg.tex, e instanceof Error ? e.message : String(e));
     }
   })();
-}
-
-function mathErrorFallback(seg: MathSeg, mode: 'wechat' | 'zhihu-text'): string {
-  if (mode === 'zhihu-text') return zhihuEquationText(seg.tex, seg.display);
-  return `<span style="color:#e05555;">[公式错误：${seg.tex.replace(/</g, '&lt;')}]</span>`;
 }
 
 /** 公众号：外部链接转文末「参考链接」；mp.weixin.qq.com 内部链接保持可点击。 */
@@ -193,16 +193,16 @@ async function substitute(
   checkpoint: ReturnType<typeof conversionCheckpoint>,
   downloadable?: Map<string, string>,
 ): Promise<string> {
+  const renderLocally = opts.platform === 'wechat' || downloadable !== undefined;
   const cache = new Map<string, string>();
   const renderOne = async (seg: MathSeg): Promise<string> => {
     if (seg.diagram) return renderSegDiagram(seg, opts, preamble, warnings, diagramCache, downloadable);
-    const mode = opts.platform === 'wechat' ? 'svg:' + opts.wechatMath : 'zhihu:' + opts.zhihuMath;
-    const key = mode + '|' + (mode.startsWith('svg') ? preamble : '') + '|' + seg.tex + '|' + seg.display;
+    const key = (seg.display ? 'display|' : 'inline|') + seg.tex;
     const hit = cache.get(key);
     if (hit !== undefined) return hit;
     let markup: string;
     try {
-      if (opts.platform === 'wechat') {
+      if (renderLocally) {
         markup = opts.wechatMath === 'svg'
           ? renderSegSvg(seg, preamble)
           : opts.wechatMath === 'svg-px'
@@ -211,12 +211,14 @@ async function substitute(
       } else if (opts.zhihuMath === 'eeimg') {
         markup = zhihuEquationImg(seg.tex, seg.display);
       } else {
-        markup = zhihuEquationText(seg.tex, seg.display);
+        markup = escapeAttr(zhihuEquationText(seg.tex, seg.display));
       }
     } catch (e) {
       const msg = e instanceof MathRenderError ? `${e.message}（${seg.tex.slice(0, 40)}…）` : String(e);
       warnings.push(`公式渲染失败: ${msg}`);
-      markup = mathErrorFallback(seg, opts.platform === 'wechat' ? 'wechat' : 'zhihu-text');
+      markup = renderLocally
+        ? `<span style="color:#e05555;">[公式错误：${escapeAttr(seg.tex)}]</span>`
+        : escapeAttr(zhihuEquationText(seg.tex, seg.display));
     }
     cache.set(key, markup);
     return markup;
@@ -231,19 +233,18 @@ async function substitute(
 
   // 行间公式独占段落时，把整个 <p> 一起替换为块级标记。
   // 否则会产出非法的 <p><section>…</section></p>，公众号解析时可能多出空行。
-  const blockMath = opts.platform === 'wechat' || (opts.platform === 'zhihu' && opts.zhihuMath === 'eeimg');
   let html = skeletonHtml;
-  if (blockMath || segs.some((seg) => seg.diagram)) {
+  if (renderLocally || segs.some((seg) => seg.diagram)) {
     html = html.replace(/<p(?:\s[^>]*)?>\s*@@MATH(\d+)@@\s*<\/p>/g, (m0, idx: string) => {
       const seg = segs[Number(idx)];
       const markup = rendered.get('@@MATH' + idx + '@@');
-      if (!seg?.display || !markup || (!blockMath && !seg.diagram)) return m0;
+      if (!seg?.display || !markup || (!renderLocally && !seg.diagram)) return m0;
       const sourceLines = /^<p[^>]* (data-source-lines="\d+:\d+")/.exec(m0)?.[1];
       return sourceLines ? markup.replace(/^<section\b/, '<section ' + sourceLines) : markup;
     });
   }
   html = html.replace(/@@MATH(\d+)@@/g, (m0, idx) => rendered.get('@@MATH' + idx + '@@') ?? m0);
-  return layoutEnumerations(layoutProofEnds(html, opts.platform === 'wechat'), downloadable !== undefined);
+  return layoutEnumerations(layoutProofEnds(html, renderLocally), downloadable !== undefined);
 }
 
 /**
@@ -299,7 +300,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
   const previewSkeletonHtml = previewWrap.outerHTML;
   let previewHtml: string;
   try {
-    previewHtml = await substitute(previewSkeletonHtml, segs, { ...opts, platform: 'wechat', wechatMath: 'svg' }, preamble, warnings, diagramCache, checkpoint, diagramSvgs);
+    previewHtml = await substitute(previewSkeletonHtml, segs, { ...opts, wechatMath: 'svg' }, preamble, warnings, diagramCache, checkpoint, diagramSvgs);
   } catch {
     previewHtml = previewSkeletonHtml;
   }
@@ -308,6 +309,7 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
 
   /* ---- 导出 HTML：随平台变化 ---- */
   let exportHtml: string;
+  let exportSegs = segs;
   if (wechatTpl) {
     const tpl = wechatTpl;
     if (tpl.content.querySelector('a[href^="#latex-ref-"]')) {
@@ -331,17 +333,19 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
     });
     if (opts.zhihuDemoteH1) demoteH1ToH2(tpl.content);
     // 知乎公式不经过 MathJax，宏需要文本展开
-    const expandedSegs = segs.map((seg) => {
-      if (!mathMacros.length || seg.diagram) return seg;
+    exportSegs = segs.map((seg) => {
+      if (seg.diagram) return seg;
       const { tex, usedArgMacros } = expandZeroArgMacros(seg.tex, mathMacros);
       if (usedArgMacros.length) {
         warnings.push(`宏 ${[...new Set(usedArgMacros)].join(' ')} 带参数，知乎公式模式不支持，请手动展开`);
       }
-      return { ...seg, tex };
+      return { ...seg, tex: normalizeZhihuTex(tex) };
     });
-    exportHtml = await substitute(tpl.innerHTML, expandedSegs, opts, preamble, warnings, diagramCache, checkpoint);
-    if (segs.some((seg) => seg.diagram === 'tikzcd')) {
-      warnings.push('知乎富文本中的 TikZ-CD 图使用嵌入 PNG。若粘贴时图片被过滤，请在目标编辑器上传交换图图片。');
+    tpl.innerHTML = await substitute(tpl.innerHTML, exportSegs, opts, preamble, warnings, diagramCache, checkpoint);
+    normalizeZhihuQuotes(tpl.content);
+    exportHtml = tpl.innerHTML;
+    if (diagramSvgs.size) {
+      warnings.push('粘贴到知乎后，在交换图标记处粘贴预览中的 PNG，或下载 PNG 并在知乎编辑器中上传。Markdown 纯文本模式会保留交换图源码。');
     }
   }
 
@@ -351,8 +355,8 @@ export async function convert(source: string, opts: ConvertOptions): Promise<Con
     (_match, indent: string, label: string, native: string) => indent + (native ? native + '.' : label
       .replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')) + ' ',
   );
-  const plainText = restoreMath(plainSource, segs, (seg) =>
-    seg.diagram ? seg.raw : seg.display ? '$$' + seg.tex + '$$' : '$' + seg.tex + '$'
+  const plainText = restoreMath(plainSource, exportSegs, (seg) =>
+    seg.diagram ? seg.raw : zhihuEquationText(seg.tex, seg.display)
   );
 
   return {

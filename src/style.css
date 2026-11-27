@@ -265,19 +265,43 @@ select:focus, input[type="text"]:focus { border-color: var(--accent); }
 .footnote-form textarea { display: block; width: 100%; resize: vertical; }
 .footnote-actions { justify-content: flex-end; margin-top: 10px; }
 
-.editor-pane textarea {
+.source-editor {
+  position: relative;
   flex: 1;
+  min-height: 0;
+  background: #fcfcfd;
+}
+
+.source-editor textarea, .find-highlights {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
   border: none;
-  resize: none;
   padding: 14px 16px;
   font-family: Consolas, "JetBrains Mono", Menlo, monospace;
   font-size: 13.5px;
   line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.source-editor textarea {
+  resize: none;
   color: var(--text);
   outline: none;
-  background: #fcfcfd;
-  min-height: 0;
+  background: transparent;
 }
+
+.find-highlights {
+  overflow: hidden;
+  pointer-events: none;
+  color: transparent;
+}
+
+.find-highlights mark { color: transparent; background: #ffeb91; }
+.find-highlights .current-match { background: #ffc460; }
 
 .tabs { display: flex; gap: 2px; }
 

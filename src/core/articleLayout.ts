@@ -152,7 +152,7 @@ export function layoutProofEnds(html: string, besideDisplay: boolean): string {
       continue;
     }
     const previous = lastProofBlock(paragraph.previousElementSibling) as HTMLElement | null;
-    if (previous && /^(P|LI)$/.test(previous.tagName)) {
+    if (previous && /^(P|LI)$/.test(previous.tagName) && !previous.querySelector(':scope > img[eeimg="2"]')) {
       previous.append(marker);
       paragraph.remove();
       keepProofEndTogether(marker);
